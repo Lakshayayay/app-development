@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 @main
-struct FlowmodoApp: App {
+struct FlowmodoraApp: App {
     private let modelContainer: ModelContainer
     @State private var store: AppStore
 

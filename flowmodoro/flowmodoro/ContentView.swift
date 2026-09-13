@@ -5,13 +5,13 @@ struct ContentView: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        FlowmodoPopover()
+        FlowmodoraPopover()
             .environment(store)
             .frame(width: 360, height: 560)
     }
 }
 
-struct FlowmodoPopover: View {
+struct FlowmodoraPopover: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openWindow) private var openWindow
         @State private var showingNewTask = false
