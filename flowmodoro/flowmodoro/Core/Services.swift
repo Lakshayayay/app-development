@@ -23,7 +23,7 @@ final class NotificationService {
         content.body = body
         if sound { content.sound = .default }
         let request = UNNotificationRequest(
-            identifier: "flowmodo.interval.(UUID().uuidString)",
+            identifier: "flowmodo.interval.\(UUID().uuidString)",
             content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         )
@@ -134,7 +134,7 @@ final class LocalSyncEngine {
 
     func refresh(pendingChanges: Int) {
         status.pendingChanges = pendingChanges
-        status.message = pendingChanges == 0 ? "Local only" : "(pendingChanges) changes queued"
+        status.message = pendingChanges == 0 ? "Local only" : "\(pendingChanges) changes queued"
     }
 }
 

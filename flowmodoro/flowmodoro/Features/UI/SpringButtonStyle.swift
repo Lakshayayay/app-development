@@ -9,3 +9,9 @@ struct SpringButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.2, dampingFraction: 1.0), value: configuration.isPressed)
     }
 }
+
+extension View {
+    func springButtonStyle() -> some View {
+        buttonStyle(SpringButtonStyle())
+    }
+}

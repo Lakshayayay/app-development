@@ -86,11 +86,11 @@ func formatDuration(_ duration: TimeInterval, style: DurationStyle = .compact) -
     case .timer:
         return String(format: "%02d:%02d:%02d", hours, minutes, remainingSeconds)
     case .compact:
-        if hours > 0 { return "(hours)h (minutes)m" }
-        if minutes > 0 { return "(minutes)m" }
-        return "(remainingSeconds)s"
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        if minutes > 0 { return "\(minutes)m" }
+        return "\(remainingSeconds)s"
     case .minutes:
-        return "(max(1, Int((Double(seconds) / 60).rounded())))m"
+        return "\(max(1, Int((Double(seconds) / 60).rounded())))m"
     }
 }
 
