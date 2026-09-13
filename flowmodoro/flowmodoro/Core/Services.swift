@@ -3,7 +3,7 @@ import Combine
 import Carbon.HIToolbox
 import Foundation
 import ServiceManagement
-import UserNotifications
+@preconcurrency import UserNotifications
 import Observation
 
 @MainActor

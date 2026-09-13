@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import flowmodoro
+@testable import Flowmodora
 
 struct FlowmodoTests {
     @Test func flowmodoroBreakUsesConfiguredRatio() {

@@ -13,8 +13,7 @@ struct ContentView: View {
 
 struct FlowmodoraPopover: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.openWindow) private var openWindow
-        @State private var showingNewTask = false
+    @State private var showingNewTask = false
     enum PopoverPage { case timer, history, statistics, settings }
     @State private var currentPage: PopoverPage = .timer
 
@@ -56,13 +55,8 @@ struct FlowmodoraPopover: View {
             }
         }
         .padding(18)
-        .liquidGlassStyle()
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                store.refreshTimer()
-            }
-        }
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
         .alert("Flowmodora", isPresented: Binding(get: { store.alertMessage != nil }, set: { if !$0 { store.alertMessage = nil } })) {
             Button("OK") { store.alertMessage = nil }
         } message: { Text(store.alertMessage ?? "") }
@@ -171,13 +165,14 @@ struct TimerReadout: View {
     var compact = false
 
     var body: some View {
-        let _ = store.clockTick
         let timerFont: Font = compact ? .headline : .system(size: 42, weight: .medium, design: .rounded)
-        VStack(alignment: compact ? .trailing : .center, spacing: compact ? 0 : 4) {
-            Text(displayValue(at: .now))
-                .font(timerFont.monospacedDigit())
-                .contentTransition(.numericText())
-            if !compact { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: compact ? .trailing : .center, spacing: compact ? 0 : 4) {
+                Text(displayValue(at: context.date))
+                    .font(timerFont.monospacedDigit())
+                    .contentTransition(.numericText())
+                if !compact { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
+            }
         }
     }
 

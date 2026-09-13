@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Combine
 import SwiftData
@@ -17,8 +18,10 @@ final class AppStore {
     private(set) var settings: AppSettingsRecord
     private(set) var tasks: [FocusTask] = []
     private(set) var sessions: [FocusSessionRecord] = []
-    private(set) var clockTick = 0
     var alertMessage: String?
+
+    private var refreshTask: Task<Void, Never>?
+    private var wakeObserver: NSObjectProtocol?
 
     init(modelContainer: ModelContainer) {
         modelContext = ModelContext(modelContainer)
@@ -49,6 +52,30 @@ final class AppStore {
             onPause: { [weak self] in self?.timer.pause() },
             onStop: { [weak self] in self?.timer.stop() }
         )
+
+        startTimerRefreshLoop()
+        // queue: .main guarantees this runs on the main thread; assumeIsolated
+        // asserts that rather than paying for an async hop through Task.
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.timer.refresh() }
+        }
+    }
+
+    /// Single source of periodic phase-completion checks — replaces the two
+    /// duplicate 500ms UI poll loops that previously drove this. Runs regardless
+    /// of whether any view (popover, window) is currently visible, so a
+    /// completed Pomodoro interval or break is recognized even while the
+    /// menu-bar popover is closed.
+    private func startTimerRefreshLoop() {
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                self?.timer.refresh()
+            }
+        }
     }
 
     func reload() {
@@ -61,11 +88,6 @@ final class AppStore {
         } catch {
             alertMessage = "Unable to read local focus data."
         }
-    }
-
-    func refreshTimer() {
-        timer.refresh()
-        clockTick += 1
     }
 
     @discardableResult

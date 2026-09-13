@@ -19,11 +19,10 @@ struct FlowmodoraApp: App {
     }
 
     var body: some Scene {
-        WindowGroup(id: "mainWindow") {
-            ContentView().environment(store)
-        }
-        .windowStyle(.hiddenTitleBar)
-
+        // MenuBarExtra must be the first scene: with LSUIElement = true, SwiftUI
+        // materializes whichever scene is declared first at launch. A WindowGroup
+        // declared first opens an uninvited window on an app that must stay
+        // menu-bar-only.
         MenuBarExtra {
             ContentView().environment(store)
         } label: {
@@ -52,15 +51,10 @@ struct MenuBarLabel: View {
     @Environment(AppStore.self) private var store
 
     var body: some View {
-        let _ = store.clockTick
-        HStack(spacing: 5) {
-            if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
-            Text(label(at: .now)).monospacedDigit()
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
-                store.refreshTimer()
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            HStack(spacing: 5) {
+                if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
+                Text(label(at: context.date)).monospacedDigit()
             }
         }
     }
