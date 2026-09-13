@@ -85,14 +85,15 @@ final class GlobalHotkeyService {
         return noErr
     }
 
-    func registerDefaultShortcuts(onStart: @escaping () -> Void, onPause: @escaping () -> Void, onStop: @escaping () -> Void) {
+    @discardableResult
+    func registerDefaultShortcuts(onStart: @escaping () -> Void, onPause: @escaping () -> Void, onStop: @escaping () -> Void) -> Bool {
         unregister()
         actions = [1: onStart, 2: onPause, 3: onStop]
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let userData = Unmanaged.passUnretained(self).toOpaque()
         guard InstallEventHandler(GetEventDispatcherTarget(), Self.eventHandler, 1, &eventType, userData, &handlerRef) == noErr else {
             actions.removeAll()
-            return
+            return false
         }
 
         let modifiers = UInt32(cmdKey | optionKey)
@@ -102,11 +103,12 @@ final class GlobalHotkeyService {
             let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)
             guard RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &ref) == noErr, let ref else {
                 unregister()
-                return
+                return false
             }
             hotkeys.append(ref)
         }
         registered = true
+        return true
     }
 
     func unregister() {

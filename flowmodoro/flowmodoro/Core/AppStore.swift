@@ -42,8 +42,9 @@ final class AppStore {
         timer = TimerEngine()
         timer.store = self
         reload()
+        purgeOutboxIfSyncNotConfigured()
         syncEngine.refresh(pendingChanges: pendingOutboxCount())
-        hotkeyService.registerDefaultShortcuts(
+        let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
             onStart: { [weak self] in
                 guard let self else { return }
                 if self.timer.phase == .pausedFocus || self.timer.phase == .pausedBreak { self.timer.resume() }
@@ -52,6 +53,9 @@ final class AppStore {
             onPause: { [weak self] in self?.timer.pause() },
             onStop: { [weak self] in self?.timer.stop() }
         )
+        if !hotkeysRegistered {
+            alertMessage = "Global shortcuts could not be registered."
+        }
 
         startTimerRefreshLoop()
         // queue: .main guarantees this runs on the main thread; assumeIsolated
@@ -184,13 +188,43 @@ final class AppStore {
     private func save(taskID: UUID?, entityType: String, operation: String) {
         do {
             try modelContext.save()
-            if let taskID {
-                modelContext.insert(OutboxEntry(entityType: entityType, entityID: taskID, operation: operation, payload: "local-change"))
+            // Only queue a sync outbox entry when sync is actually configured.
+            // No transport exists to drain the outbox yet (Supabase sync is
+            // still a placeholder), so queuing unconditionally — as this used
+            // to — meant every local write grew this table forever with rows
+            // nothing would ever consume.
+            if let taskID, syncEngine.status.isConfigured {
+                modelContext.insert(OutboxEntry(
+                    entityType: entityType, entityID: taskID, operation: operation,
+                    payload: outboxPayload(entityType: entityType, entityID: taskID, operation: operation)
+                ))
                 try modelContext.save()
             }
             syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
             alertMessage = AppError.couldNotSave.localizedDescription
         }
+    }
+
+    private func outboxPayload(entityType: String, entityID: UUID, operation: String) -> String {
+        let fields: [String: String] = [
+            "entityType": entityType,
+            "entityID": entityID.uuidString,
+            "operation": operation,
+            "queuedAt": ISO8601DateFormatter().string(from: .now),
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: fields),
+              let json = String(data: data, encoding: .utf8) else { return "{}" }
+        return json
+    }
+
+    /// One-time cleanup: sync has never been configurable in any shipped
+    /// version of this app, so any OutboxEntry rows already on disk are
+    /// orphaned placeholder junk from before this fix, not real queued work.
+    private func purgeOutboxIfSyncNotConfigured() {
+        guard !syncEngine.status.isConfigured else { return }
+        guard let stale = try? modelContext.fetch(FetchDescriptor<OutboxEntry>()), !stale.isEmpty else { return }
+        stale.forEach { modelContext.delete($0) }
+        try? modelContext.save()
     }
 }

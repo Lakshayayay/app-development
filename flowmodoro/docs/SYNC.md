@@ -1,6 +1,6 @@
 # Optional Supabase synchronization
 
-The app is deliberately local-first. SwiftData is authoritative for runtime behavior, history, and statistics. `OutboxEntry` records local changes without blocking the user. A future transport should:
+The app is deliberately local-first. SwiftData is authoritative for runtime behavior, history, and statistics. `OutboxEntry` records local changes without blocking the user — but only once sync is actually configured (`LocalSyncEngine.status.isConfigured`). No transport exists yet to drain the outbox, so `AppStore.save()` does not queue entries while sync is unconfigured; earlier builds queued unconditionally, which grew the table forever with rows nothing would ever consume. A future transport should:
 
 1. read pending outbox entries,
 2. authenticate with an optional Supabase email session,
