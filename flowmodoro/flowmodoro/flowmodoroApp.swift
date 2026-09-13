@@ -61,12 +61,23 @@ struct FlowmodoraApp: App {
 
 struct MenuBarLabel: View {
     @Environment(AppStore.self) private var store
+    @State private var now = Date.now
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: 5) {
-                if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
-                Text(label(at: context.date)).monospacedDigit()
+        // Deliberately NOT a TimelineView here: using one as the root/label
+        // view of a MenuBarExtra hangs NSStatusItem's AutoLayout pass
+        // indefinitely (confirmed via a stack sample — the process pegs one
+        // CPU core forever inside NSStatusItem._adjustLength / NSISEngine
+        // constraint solving and never returns). A plain, structurally
+        // stable HStack driven by a small polling Task avoids it.
+        HStack(spacing: 5) {
+            if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
+            Text(label(at: now)).monospacedDigit()
+        }
+        .task {
+            while !Task.isCancelled {
+                now = .now
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }
