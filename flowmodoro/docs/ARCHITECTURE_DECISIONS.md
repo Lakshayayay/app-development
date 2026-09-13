@@ -49,6 +49,13 @@
 - Alternative: keep excluding interrupted sessions from statistics only, on the theory that an abandoned session "doesn't count." Rejected because the app already treats it as real, recorded focus time everywhere else, and the product principle is that focus data reflects what actually happened, not what the user intended.
 - Source consulted: `PRODUCT PLAN.md` §45 ("Focus data is more important than temporary UI state") and §16 (stop behavior records actual focus duration).
 
+## Email OTP code instead of magic link
+
+- Decision: sign-in uses `Auth.signInWithOTP(email:)` + `Auth.verifyOTP(email:token:type:)` with the user typing a 6-digit code, not `signInWithOTP(email:redirectTo:)` with a clickable magic link.
+- Reason: a magic link requires registering a custom URL scheme, handling `onOpenURL`/`NSApplicationDelegate` callbacks, and reasoning about the app's cold-launch-vs-already-running behavior when the link is opened — real added surface area for a menu-bar utility app. A typed code needs only a text field already living inside the existing Settings → Sync section.
+- Trade-off accepted: the Supabase project's default "Magic Link" email template sends a clickable link, not a bare code, so the dashboard template must be edited to include `{{ .Token }}` for this flow to produce something the user can type in. This is a one-time manual step documented in `docs/SYNC.md`, not something the app can configure itself (it needs the anon key only; template configuration needs the Management API or dashboard access).
+- Source consulted: Supabase Swift API reference (`auth-signinwithotp`, `auth-verifyotp`) and the passwordless-email guide's note that magic links and OTP codes share the same underlying email, distinguished only by the template.
+
 ## Optional sync boundary
 
 - Decision: local persistence and the outbox are usable without Supabase; remote sync is a separate transport concern.

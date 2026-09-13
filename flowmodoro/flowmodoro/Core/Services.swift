@@ -123,23 +123,6 @@ final class GlobalHotkeyService {
     var isRegistered: Bool { registered }
 }
 
-struct SyncStatus: Equatable, Sendable {
-    var isConfigured = false
-    var pendingChanges = 0
-    var message = "Local only"
-}
-
-@MainActor
-@Observable
-final class LocalSyncEngine {
-    private(set) var status = SyncStatus()
-
-    func refresh(pendingChanges: Int) {
-        status.pendingChanges = pendingChanges
-        status.message = pendingChanges == 0 ? "Local only" : "\(pendingChanges) changes queued"
-    }
-}
-
 enum AppError: LocalizedError {
     case couldNotSave
 

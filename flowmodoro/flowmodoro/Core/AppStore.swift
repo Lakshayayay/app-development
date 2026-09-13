@@ -42,7 +42,6 @@ final class AppStore {
         timer = TimerEngine()
         timer.store = self
         reload()
-        purgeOutboxIfSyncNotConfigured()
         syncEngine.refresh(pendingChanges: pendingOutboxCount())
         let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
             onStart: { [weak self] in
@@ -76,10 +75,85 @@ final class AppStore {
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-                self?.timer.refresh()
+                guard !Task.isCancelled, let self else { return }
+                self.timer.refresh()
+                await self.attemptSyncOrCleanupOutbox()
             }
         }
+    }
+
+    private var hasCheckedStaleOutbox = false
+
+    /// Runs once per launch, a beat after startup so LocalSyncEngine's auth
+    /// state has had a chance to resolve (a restored session isn't known
+    /// synchronously at init) — deciding "not configured" too early would
+    /// wrongly purge a signed-in user's still-queued entries. Every other
+    /// tick just attempts a drain when there's something to send.
+    private func attemptSyncOrCleanupOutbox() async {
+        if syncEngine.status.isConfigured {
+            if pendingOutboxCount() > 0 { await attemptSync() }
+        } else if !hasCheckedStaleOutbox {
+            hasCheckedStaleOutbox = true
+            purgeOutboxIfSyncNotConfigured()
+        }
+    }
+
+    /// Uploads every queued OutboxEntry to Supabase and removes it on success.
+    /// A row that fails (offline, transient error) is left queued — the next
+    /// tick or the next save() retries it. Idempotent: upsert-by-id means a
+    /// retried row never creates a duplicate.
+    func attemptSync() async {
+        guard syncEngine.status.isConfigured, let userID = syncEngine.currentUserID else { return }
+        guard let entries = try? modelContext.fetch(FetchDescriptor<OutboxEntry>()), !entries.isEmpty else { return }
+
+        for entry in entries {
+            do {
+                switch entry.entityType {
+                case "task":
+                    guard let task = tasks.first(where: { $0.id == entry.entityID }) else {
+                        modelContext.delete(entry)
+                        continue
+                    }
+                    try await syncEngine.upsertTask(SupabaseTaskRow(
+                        id: task.id, user_id: userID, title: task.title, is_completed: task.isCompleted,
+                        completed_at: task.completedAt, created_at: task.createdAt,
+                        updated_at: task.updatedAt, deleted_at: task.deletedAt
+                    ))
+                case "focus_session":
+                    guard let session = sessions.first(where: { $0.id == entry.entityID }) else {
+                        modelContext.delete(entry)
+                        continue
+                    }
+                    try await syncEngine.upsertFocusSession(SupabaseFocusSessionRow(
+                        id: session.id, user_id: userID, task_id: session.taskID, mode: session.modeRawValue,
+                        started_at: session.startedAt, ended_at: session.endedAt,
+                        focused_duration: session.focusedDuration, planned_duration: session.plannedDuration,
+                        break_duration: session.breakDuration, completed: session.completed,
+                        interrupted: session.interrupted, created_at: session.createdAt,
+                        updated_at: session.updatedAt, deleted_at: session.deletedAt
+                    ))
+                case "settings":
+                    try await syncEngine.upsertSettings(SupabaseSettingsRow(
+                        id: settings.id, user_id: userID,
+                        payload: SupabaseSettingsPayload(
+                            selectedMode: settings.selectedModeRawValue, flowBreakRatio: settings.flowBreakRatio,
+                            pomodoroWorkDuration: settings.pomodoroWorkDuration,
+                            pomodoroShortBreakDuration: settings.pomodoroShortBreakDuration,
+                            pomodoroLongBreakDuration: settings.pomodoroLongBreakDuration,
+                            pomodoroCyclesBeforeLongBreak: settings.pomodoroCyclesBeforeLongBreak
+                        ),
+                        updated_at: settings.updatedAt
+                    ))
+                default:
+                    break
+                }
+                modelContext.delete(entry)
+            } catch {
+                continue // leave queued; retried on the next tick or save()
+            }
+        }
+        try? modelContext.save()
+        syncEngine.refresh(pendingChanges: pendingOutboxCount())
     }
 
     func reload() {
@@ -199,6 +273,7 @@ final class AppStore {
                     payload: outboxPayload(entityType: entityType, entityID: taskID, operation: operation)
                 ))
                 try modelContext.save()
+                Task { await attemptSync() }
             }
             syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
