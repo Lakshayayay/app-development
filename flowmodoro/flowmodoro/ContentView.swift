@@ -13,46 +13,18 @@ struct ContentView: View {
 
 struct FlowmodoraPopover: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @State private var showingNewTask = false
-    enum PopoverPage { case timer, history, statistics, settings }
-    @State private var currentPage: PopoverPage = .timer
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            switch currentPage {
-            case .timer:
-                header
-                Divider().padding(.vertical, 14)
-                taskSection
-                Divider().padding(.vertical, 14)
-                timerSection
-                Spacer(minLength: 12)
-                footer
-            case .history:
-                HStack {
-                    Button(action: { currentPage = .timer }) { Image(systemName: "chevron.left").font(.title3) }.buttonStyle(.plain)
-                    Spacer()
-                    Text("History").font(.headline)
-                    Spacer()
-                }.padding(.bottom, 12)
-                HistoryView().environment(store)
-            case .statistics:
-                HStack {
-                    Button(action: { currentPage = .timer }) { Image(systemName: "chevron.left").font(.title3) }.buttonStyle(.plain)
-                    Spacer()
-                    Text("Statistics").font(.headline)
-                    Spacer()
-                }.padding(.bottom, 12)
-                StatisticsView().environment(store)
-            case .settings:
-                HStack {
-                    Button(action: { currentPage = .timer }) { Image(systemName: "chevron.left").font(.title3) }.buttonStyle(.plain)
-                    Spacer()
-                    Text("Settings").font(.headline)
-                    Spacer()
-                }.padding(.bottom, 12)
-                SettingsView().environment(store)
-            }
+            header
+            Divider().padding(.vertical, 14)
+            taskSection
+            Divider().padding(.vertical, 14)
+            timerSection
+            Spacer(minLength: 12)
+            footer
         }
         .padding(18)
         .glassEffect(.regular, in: .rect(cornerRadius: 16))
@@ -139,10 +111,10 @@ struct FlowmodoraPopover: View {
                 .font(.subheadline).foregroundStyle(.secondary)
             Spacer()
             Menu {
-                Button("History") { currentPage = .history }
-                Button("Statistics") { currentPage = .statistics }
+                Button("History") { openWindow(id: "history") }
+                Button("Statistics") { openWindow(id: "statistics") }
                 Divider()
-                Button("Settings") { currentPage = .settings }
+                Button("Settings") { openWindow(id: "settings") }
                 Divider()
                 Button("Quit Flowmodora") { NSApplication.shared.terminate(nil) }
             } label: { Image(systemName: "ellipsis.circle") }

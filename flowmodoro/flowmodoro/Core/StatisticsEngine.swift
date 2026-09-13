@@ -24,13 +24,17 @@ struct DailyFocus: Identifiable, Sendable, Equatable {
 }
 
 enum StatisticsEngine {
+    // Interrupted sessions still represent real focused time (TimerEngine.skip
+    // records the actual elapsed duration up to the point of interruption) and
+    // are shown with that duration in History — excluding them here would make
+    // the same underlying session tell two different stories on two screens.
     static func filteredSessions(
         _ sessions: [FocusSessionValue],
         period: StatisticsPeriod,
         calendar: Calendar = .current,
         now: Date = .now
     ) -> [FocusSessionValue] {
-        guard period != .total else { return sessions.filter { !$0.interrupted } }
+        guard period != .total else { return sessions }
         let start: Date
         switch period {
         case .today:
@@ -42,9 +46,9 @@ enum StatisticsEngine {
         case .year:
             start = calendar.dateInterval(of: .year, for: now)?.start ?? calendar.startOfDay(for: now)
         case .total:
-            return sessions.filter { !$0.interrupted }
+            return sessions
         }
-        return sessions.filter { !$0.interrupted && $0.startedAt >= start }
+        return sessions.filter { $0.startedAt >= start }
     }
 
     static func summary(_ sessions: [FocusSessionValue]) -> FocusSummary {
@@ -71,7 +75,7 @@ enum StatisticsEngine {
     }
 
     static func focusByTask(_ sessions: [FocusSessionValue]) -> [(taskID: UUID?, duration: TimeInterval)] {
-        Dictionary(grouping: sessions.filter { !$0.interrupted }, by: \.taskID)
+        Dictionary(grouping: sessions, by: \.taskID)
             .map { (taskID: $0.key, duration: $0.value.reduce(0) { $0 + $1.focusedDuration }) }
             .sorted { $0.duration > $1.duration }
     }

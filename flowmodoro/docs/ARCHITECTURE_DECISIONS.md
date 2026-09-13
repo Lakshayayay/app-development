@@ -42,6 +42,13 @@
 - Alternative: split durations across calendar days.
 - Source consulted: Foundation `Calendar.dateInterval(of:for:)` and `Calendar.startOfDay(for:)`.
 
+## Interrupted sessions count toward statistics
+
+- Decision: `StatisticsEngine` includes interrupted (skipped) sessions in every total, daily grouping, and per-task breakdown.
+- Reason: `TimerEngine.skip()` persists the real elapsed `focusedDuration` up to the point of interruption, and History displays that duration unfiltered. Excluding the same rows from Statistics made two screens disagree about how much focus actually happened on a given day — a silent data discrepancy, not a deliberate product distinction. No metric in the UI currently distinguishes "completed" from "interrupted" session counts, so there was no signal being preserved by the exclusion.
+- Alternative: keep excluding interrupted sessions from statistics only, on the theory that an abandoned session "doesn't count." Rejected because the app already treats it as real, recorded focus time everywhere else, and the product principle is that focus data reflects what actually happened, not what the user intended.
+- Source consulted: `PRODUCT PLAN.md` §45 ("Focus data is more important than temporary UI state") and §16 (stop behavior records actual focus duration).
+
 ## Optional sync boundary
 
 - Decision: local persistence and the outbox are usable without Supabase; remote sync is a separate transport concern.

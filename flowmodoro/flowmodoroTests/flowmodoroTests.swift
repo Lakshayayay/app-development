@@ -43,6 +43,10 @@ struct FlowmodoTests {
     }
 
     @Test func statisticsSummaryAndCalendarGrouping() {
+        // Interrupted sessions still represent real focused time (the user
+        // worked 30 minutes before skipping) and are shown with that duration
+        // in History, so StatisticsEngine must include them too — otherwise
+        // the same session tells two different stories on two screens.
         let calendar = Calendar(identifier: .gregorian)
         let day = Date(timeIntervalSince1970: 1_700_000_000)
         let values = [
@@ -51,12 +55,13 @@ struct FlowmodoTests {
             makeSession(duration: 30, startedAt: day.addingTimeInterval(86_400), interrupted: true)
         ]
 
-        let summary = StatisticsEngine.summary(values.filter { !$0.interrupted })
-        #expect(summary.total == 180)
+        let filtered = StatisticsEngine.filteredSessions(values, period: .total, calendar: calendar)
+        let summary = StatisticsEngine.summary(filtered)
+        #expect(summary.total == 210)
         #expect(summary.longest == 120)
-        #expect(summary.average == 90)
-        #expect(summary.sessions == 2)
-        #expect(StatisticsEngine.dailyFocus(values, period: .total, calendar: calendar).count == 1)
+        #expect(summary.average == 70)
+        #expect(summary.sessions == 3)
+        #expect(StatisticsEngine.dailyFocus(values, period: .total, calendar: calendar).count == 2)
     }
 
     private func makeSession(duration: TimeInterval, startedAt: Date, interrupted: Bool = false) -> FocusSessionValue {

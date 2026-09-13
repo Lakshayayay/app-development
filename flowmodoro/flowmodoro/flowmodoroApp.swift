@@ -25,6 +25,7 @@ struct FlowmodoraApp: App {
         // menu-bar-only.
         MenuBarExtra {
             ContentView().environment(store)
+                .preferredColorScheme(preferredColorScheme)
         } label: {
             MenuBarLabel().environment(store)
         }
@@ -32,18 +33,29 @@ struct FlowmodoraApp: App {
 
         Window("History", id: "history") {
             HistoryView().environment(store)
+                .preferredColorScheme(preferredColorScheme)
         }
         .defaultSize(width: 460, height: 520)
 
         Window("Statistics", id: "statistics") {
             StatisticsView().environment(store)
+                .preferredColorScheme(preferredColorScheme)
         }
         .defaultSize(width: 680, height: 540)
 
         Window("Settings", id: "settings") {
             SettingsView().environment(store)
+                .preferredColorScheme(preferredColorScheme)
         }
         .defaultSize(width: 540, height: 660)
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch store.settings.appearance {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }
 
