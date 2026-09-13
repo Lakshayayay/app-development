@@ -1,4 +1,5 @@
 import AppKit
+import Charts
 import SwiftUI
 
 struct ContentView: View {
@@ -237,25 +238,31 @@ struct StatisticsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Focus by day").font(.headline)
                 let daily = StatisticsEngine.dailyFocus(store.sessionValues, period: period)
-                if daily.isEmpty {
+                if daily.allSatisfy({ $0.duration == 0 }) {
                     Text("Start a session to see your focus pattern.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(daily) { day in
-                        HStack(spacing: 10) {
-                            Text(day.date.formatted(.dateTime.month(.abbreviated).day())).font(.caption).frame(width: 48, alignment: .leading)
-                            GeometryReader { proxy in
-                                RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(0.75))
-                                    .frame(width: max(4, proxy.size.width * CGFloat(day.duration / max(1, daily.map(\.duration).max() ?? 1))))
-                            }.frame(height: 10)
-                            Text(formatDuration(day.duration)).font(.caption.monospacedDigit()).frame(width: 44, alignment: .trailing)
-                        }.frame(height: 18)
+                    Chart(daily) { day in
+                        BarMark(
+                            x: .value("Day", day.date, unit: .day),
+                            y: .value("Minutes", day.duration / 60)
+                        )
+                        .foregroundStyle(Color.accentColor.gradient)
                     }
+                    .frame(height: 140)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Focus by task").font(.headline)
-                ForEach(StatisticsEngine.focusByTask(values), id: \.taskID) { item in
-                    HStack { Text(store.taskTitle(for: item.taskID)); Spacer(); Text(formatDuration(item.duration)).foregroundStyle(.secondary) }
+                ForEach(StatisticsEngine.taskFactors(values)) { factor in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(store.taskTitle(for: factor.taskID))
+                            Text("\(factor.sessionCount) session\(factor.sessionCount == 1 ? "" : "s") · avg \(formatDuration(factor.meanSession))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(formatDuration(factor.totalFocused)).foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer()

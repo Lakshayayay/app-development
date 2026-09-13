@@ -23,6 +23,22 @@ struct DailyFocus: Identifiable, Sendable, Equatable {
     var id: Date { date }
 }
 
+/// Factual per-task aggregates only — total time, counts, and durations
+/// traceable directly to FocusSessionRecord rows. Deliberately not a weighted
+/// or composite "productivity score": the product spec explicitly rules those
+/// out, and every field here is a plain sum/count/average a user can verify
+/// by rereading their own History.
+struct TaskFactor: Identifiable, Sendable, Equatable {
+    let taskID: UUID?
+    let totalFocused: TimeInterval
+    let sessionCount: Int
+    let meanSession: TimeInterval
+    let medianSession: TimeInterval
+    let interruptedCount: Int
+    let lastFocusedAt: Date?
+    var id: UUID? { taskID }
+}
+
 enum StatisticsEngine {
     // Interrupted sessions still represent real focused time (TimerEngine.skip
     // records the actual elapsed duration up to the point of interruption) and
@@ -69,15 +85,49 @@ enum StatisticsEngine {
     ) -> [DailyFocus] {
         let grouped = Dictionary(grouping: filteredSessions(sessions, period: period, calendar: calendar, now: now)) {
             calendar.startOfDay(for: $0.startedAt)
+        }.mapValues { $0.reduce(0) { $0 + $1.focusedDuration } }
+
+        // Zero-fill every day from the period's start through today, so a
+        // quiet day reads as "0m", not as a gap the chart silently skips.
+        // .total has no natural start bound, so it stays actual-data-only.
+        guard let days = dayRange(for: period, calendar: calendar, now: now) else {
+            return grouped.map { DailyFocus(date: $0.key, duration: $0.value) }.sorted { $0.date < $1.date }
         }
-        return grouped.map { DailyFocus(date: $0.key, duration: $0.value.reduce(0) { $0 + $1.focusedDuration }) }
-            .sorted { $0.date < $1.date }
+        return days.map { DailyFocus(date: $0, duration: grouped[$0] ?? 0) }
     }
 
-    static func focusByTask(_ sessions: [FocusSessionValue]) -> [(taskID: UUID?, duration: TimeInterval)] {
-        Dictionary(grouping: sessions, by: \.taskID)
-            .map { (taskID: $0.key, duration: $0.value.reduce(0) { $0 + $1.focusedDuration }) }
-            .sorted { $0.duration > $1.duration }
+    private static func dayRange(for period: StatisticsPeriod, calendar: Calendar, now: Date) -> [Date]? {
+        let today = calendar.startOfDay(for: now)
+        let start: Date
+        switch period {
+        case .total: return nil
+        case .today: start = today
+        case .week: start = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? today
+        case .month: start = calendar.dateInterval(of: .month, for: now)?.start ?? today
+        case .year: start = calendar.dateInterval(of: .year, for: now)?.start ?? today
+        }
+        let startDay = calendar.startOfDay(for: start)
+        let dayCount = max(0, calendar.dateComponents([.day], from: startDay, to: today).day ?? 0)
+        return (0...dayCount).compactMap { calendar.date(byAdding: .day, value: $0, to: startDay) }
+    }
+
+    static func taskFactors(_ sessions: [FocusSessionValue]) -> [TaskFactor] {
+        Dictionary(grouping: sessions, by: \.taskID).map { taskID, group in
+            let durations = group.map(\.focusedDuration).sorted()
+            let total = durations.reduce(0, +)
+            let mid = durations.count / 2
+            let median: TimeInterval = durations.isEmpty ? 0
+                : durations.count.isMultiple(of: 2) ? (durations[mid - 1] + durations[mid]) / 2 : durations[mid]
+            return TaskFactor(
+                taskID: taskID,
+                totalFocused: total,
+                sessionCount: group.count,
+                meanSession: durations.isEmpty ? 0 : total / Double(durations.count),
+                medianSession: median,
+                interruptedCount: group.filter(\.interrupted).count,
+                lastFocusedAt: group.map(\.startedAt).max()
+            )
+        }.sorted { $0.totalFocused > $1.totalFocused }
     }
 }
 
