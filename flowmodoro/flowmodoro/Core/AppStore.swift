@@ -91,7 +91,11 @@ final class AppStore {
     /// tick just attempts a drain when there's something to send.
     private func attemptSyncOrCleanupOutbox() async {
         if syncEngine.status.isConfigured {
-            if pendingOutboxCount() > 0 { await attemptSync() }
+            // syncEngine.status.pendingChanges is kept in lockstep with the
+            // outbox table by every mutation site (save(), attemptSync(),
+            // reload()) via refresh(pendingChanges:) — no need to re-fetch
+            // the count from SwiftData on every 1s tick just to check it's 0.
+            if syncEngine.status.pendingChanges > 0 { await attemptSync() }
         } else if !hasCheckedStaleOutbox {
             hasCheckedStaleOutbox = true
             purgeOutboxIfSyncNotConfigured()

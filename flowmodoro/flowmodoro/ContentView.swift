@@ -8,7 +8,8 @@ struct ContentView: View {
     var body: some View {
         FlowmodoraPopover()
             .environment(store)
-            .frame(width: 360, height: 560)
+            .frame(width: 360)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -28,25 +29,19 @@ struct FlowmodoraPopover: View {
             footer
         }
         .padding(18)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
         .alert("Flowmodora", isPresented: Binding(get: { store.alertMessage != nil }, set: { if !$0 { store.alertMessage = nil } })) {
             Button("OK") { store.alertMessage = nil }
         } message: { Text(store.alertMessage ?? "") }
     }
 
     private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("FLOWMODORA")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .tracking(1.8)
-                Text(store.timer.phase == .idle ? "Ready to focus" : phaseTitle)
-                    .font(.title3.weight(.semibold))
-            }
-            Spacer()
-            TimerReadout(store: store, compact: true)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("FLOWMODORA")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .tracking(1.8)
+            Text(store.timer.phase == .idle ? "Ready to focus" : phaseTitle)
+                .font(.title3.weight(.semibold))
         }
     }
 
@@ -129,43 +124,6 @@ struct FlowmodoraPopover: View {
         case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long Break" : "Break"
         case .suggestedBreak: return "Break ready"
         case .idle: return "Ready to focus"
-        }
-    }
-}
-
-struct TimerReadout: View {
-    var store: AppStore
-    var compact = false
-
-    var body: some View {
-        let timerFont: Font = compact ? .headline : .system(size: 42, weight: .medium, design: .rounded)
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            VStack(alignment: compact ? .trailing : .center, spacing: compact ? 0 : 4) {
-                Text(displayValue(at: context.date))
-                    .font(timerFont.monospacedDigit())
-                    .contentTransition(.numericText())
-                if !compact { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
-            }
-        }
-    }
-
-    private func displayValue(at date: Date) -> String {
-        switch store.timer.phase {
-        case .focus where store.timer.mode == .flowmodoro:
-            return formatDuration(store.timer.focusDuration(at: date), style: .timer)
-        case .focus, .pausedFocus, .breakTimer, .pausedBreak:
-            return formatDuration(store.timer.countdownRemaining(at: date), style: .timer)
-        case .suggestedBreak: return "Ready"
-        case .idle: return "—"
-        }
-    }
-
-    private var subtitle: String {
-        switch store.timer.phase {
-        case .focus, .pausedFocus: return store.taskTitle(for: store.timer.snapshot.taskID)
-        case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long break" : "Break"
-        case .suggestedBreak: return "Take a breath"
-        case .idle: return "Start when you’re ready"
         }
     }
 }

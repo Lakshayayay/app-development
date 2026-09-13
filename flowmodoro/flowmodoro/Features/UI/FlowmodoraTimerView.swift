@@ -9,11 +9,10 @@ struct FlowmodoraTimerView: View {
         // Stacking a second translucent surface on top of it collapses
         // legibility (apple-design §12). Only the buttons below get their own
         // glass — lighter material drawing attention to what's interactive.
-        VStack(spacing: 32) {
+        VStack(spacing: 20) {
             timerCircle
             controls
         }
-        .padding(24)
     }
 
     private var timerCircle: some View {

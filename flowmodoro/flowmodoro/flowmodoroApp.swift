@@ -74,7 +74,11 @@ struct MenuBarLabel: View {
             if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
             Text(label(at: now)).monospacedDigit()
         }
-        .task {
+        // Only polls while a timer is actually running — idle, the label is
+        // static text and there's nothing to tick, so this task exits and
+        // stops waking the process every second.
+        .task(id: store.timer.isActive) {
+            guard store.timer.isActive else { return }
             while !Task.isCancelled {
                 now = .now
                 try? await Task.sleep(for: .seconds(1))
