@@ -9,13 +9,20 @@ struct FlowmodoraApp: App {
     init() {
         let container: ModelContainer
         do {
-            container = try ModelContainer(for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self)
+            container = try Self.makeContainer()
         } catch {
             fatalError("Flowmodora could not create its local database: \(error)")
         }
         let applicationStore = AppStore(modelContainer: container)
         modelContainer = container
         _store = State(wrappedValue: applicationStore)
+    }
+
+    private static func makeContainer() throws -> ModelContainer {
+        #if DEBUG
+        if DemoData.isActive { return try DemoData.container() }
+        #endif
+        return try ModelContainer(for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self)
     }
 
     var body: some Scene {

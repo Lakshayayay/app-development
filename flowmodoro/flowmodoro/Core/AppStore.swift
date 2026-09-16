@@ -95,6 +95,9 @@ final class AppStore {
     /// tick or the next save() retries it. Idempotent: upsert-by-id means a
     /// retried row never creates a duplicate.
     func attemptSync() async {
+        #if DEBUG
+        guard !DemoData.isActive else { return }
+        #endif
         guard syncEngine.status.isConfigured, let userID = syncEngine.currentUserID else { return }
         guard let entries = try? modelContext.fetch(FetchDescriptor<OutboxEntry>()), !entries.isEmpty else { return }
 
