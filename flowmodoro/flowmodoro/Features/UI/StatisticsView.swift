@@ -1,6 +1,32 @@
 import Charts
 import SwiftUI
 
+extension LinearGradient {
+    /// The accent, lifted toward white at the top: more "pop" than a flat
+    /// fill while staying the app's single accent hue in light and dark.
+    static var barFill: LinearGradient {
+        LinearGradient(colors: [Color.accentColor.mix(with: .white, by: 0.3), .accentColor], startPoint: .top, endPoint: .bottom)
+    }
+}
+
+/// Readout for a selected mark: a Liquid Glass capsule floating over the
+/// chart, like the popover's controls. Text stays in primary and secondary
+/// colors, never the series color.
+private struct ChartCallout: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(title).font(.callout.weight(.semibold).monospacedDigit())
+            Text(detail).font(.caption2).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .glassEffect(.regular, in: .capsule)
+    }
+}
+
 /// Every section reads only the AppStore properties it needs (dailyTotals,
 /// streak, sessionValues, …) — @Observable tracks access per-property, so a
 /// timer tick (store.timer.now) never invalidates this screen: nothing here
@@ -188,7 +214,7 @@ private struct HeatmapSection: View {
             Chart(cells) { cell in
                 RectangleMark(x: .value("Week", cell.weekIndex), y: .value("Weekday", 6 - cell.weekday))
                     .foregroundStyle(Color.accentColor.opacity(level(cell.duration)))
-                    .cornerRadius(2)
+                    .cornerRadius(3)
             }
             .chartXAxis(.hidden)
             .chartYAxis(.hidden)
@@ -239,40 +265,49 @@ private struct ProgressSection: View {
     let daily: [DailyFocus]
     let summary: FocusSummary
     let goal: TimeInterval
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedDay: Date?
+    @State private var hasAppeared = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
                 StatTile(title: "Focus time", value: formatDuration(summary.total))
                 StatTile(title: "Sessions", value: "\(summary.sessions)")
-                StatTile(title: "Longest", value: formatDuration(summary.longest))
-                StatTile(title: "Average", value: formatDuration(summary.average))
             }
             if daily.allSatisfy({ $0.duration == 0 }) {
                 Text("Start a session to see your focus pattern.").foregroundStyle(.secondary)
             } else {
                 Chart {
                     ForEach(daily) { day in
-                        BarMark(x: .value("Day", day.date, unit: .day), y: .value("Minutes", day.duration / 60))
-                            .foregroundStyle(Color.accentColor.opacity(day.duration >= goal ? 1 : 0.35))
+                        BarMark(x: .value("Day", day.date, unit: .day),
+                                y: .value("Minutes", hasAppeared ? day.duration / 60 : 0))
+                            .foregroundStyle(LinearGradient.barFill.opacity(barOpacity(day)))
+                            .cornerRadius(4)
                     }
                     RuleMark(y: .value("Goal", goal / 60))
                         .foregroundStyle(.secondary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    if let match {
+                        RuleMark(x: .value("Day", match.date, unit: .day))
+                            .foregroundStyle(Color.secondary.opacity(0.25))
+                            .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                ChartCallout(title: formatDuration(match.duration),
+                                             detail: match.date.formatted(.dateTime.month(.abbreviated).day()))
+                            }
+                    }
                 }
-                .frame(height: 140)
+                .frame(height: 160)
                 .chartXSelection(value: Binding(
                     get: { selectedDay },
-                    // Snapped to the day: re-renders once per bar crossed, not per pointer event.
                     set: { date in
                         let day = date.map { Calendar.current.startOfDay(for: $0) }
                         if day != selectedDay { selectedDay = day }
                     }
                 ))
-                if let match {
-                    Text("\(match.date.formatted(date: .abbreviated, time: .omitted)) · \(formatDuration(match.duration))")
-                        .font(.caption).foregroundStyle(.secondary)
+                .onAppear {
+                    // Bars rise from the baseline once per window open.
+                    withAnimation(reduceMotion ? nil : .spring(duration: 0.5, bounce: 0.2)) { hasAppeared = true }
                 }
             }
         }
@@ -280,6 +315,12 @@ private struct ProgressSection: View {
 
     private var match: DailyFocus? {
         selectedDay.flatMap { day in daily.first { $0.date == day } }
+    }
+
+    private func barOpacity(_ day: DailyFocus) -> Double {
+        let base = day.duration >= goal ? 1 : 0.45
+        guard let match else { return base }
+        return match.date == day.date ? 1 : base * 0.5
     }
 }
 
@@ -301,10 +342,23 @@ private struct MilestoneSection: View {
                 Chart {
                     ForEach(series) { day in
                         AreaMark(x: .value("Date", day.date), y: .value("Hours", day.duration / 3600))
-                            .foregroundStyle(Color.accentColor.opacity(0.15))
+                            .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.4), Color.accentColor.opacity(0.02)],
+                                                            startPoint: .top, endPoint: .bottom))
+                            .interpolationMethod(.monotone)
                         LineMark(x: .value("Date", day.date), y: .value("Hours", day.duration / 3600))
                             .foregroundStyle(Color.accentColor)
+                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                            // .monotone, not .catmullRom: a running total never decreases, and
+                            // catmull-rom overshoot would draw dips that never happened.
                             .interpolationMethod(.monotone)
+                    }
+                    if let last = series.last {
+                        PointMark(x: .value("Date", last.date), y: .value("Hours", last.duration / 3600))
+                            .symbolSize(80)
+                            .foregroundStyle(Color.accentColor)
+                            .annotation(position: .top, alignment: .trailing) {
+                                ChartCallout(title: formatDuration(last.duration), detail: "so far")
+                            }
                     }
                     if let milestone {
                         RuleMark(y: .value("Milestone", milestone / 3600))
@@ -312,7 +366,7 @@ private struct MilestoneSection: View {
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     }
                 }
-                .frame(height: 140)
+                .frame(height: 160)
             }
         }
     }
@@ -337,8 +391,13 @@ private struct TaskBreakdownSection: View {
                 Chart(bars) { bar in
                     BarMark(x: .value("Minutes", bar.duration / 60), y: .value("Task", bar.name))
                         .foregroundStyle(Color.accentColor.gradient)
+                        .cornerRadius(6)
+                        .annotation(position: .trailing) {
+                            Text(formatDuration(bar.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
                 }
-                .frame(height: CGFloat(bars.count) * 28 + 20)
+                .chartXAxis(.hidden) // every bar is labelled directly
+                .frame(height: CGFloat(bars.count) * 32 + 12)
             }
         }
     }
