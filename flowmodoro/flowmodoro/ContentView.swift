@@ -281,6 +281,12 @@ struct SettingsView: View {
                 } else if awaitingCode {
                     TextField("6-digit code", text: $otpCode)
                         .textFieldStyle(.roundedBorder)
+                        .textContentType(.oneTimeCode) // offers the code from Mail via AutoFill
+                        .onChange(of: otpCode) { _, code in
+                            // ASCII digits only: pasted codes often carry spaces or dashes.
+                            let digits = String(code.filter { $0.isASCII && $0.isNumber }.prefix(10))
+                            if digits != code { otpCode = digits }
+                        }
                         .onSubmit(verifyCode)
                     HStack {
                         Button("Verify") { verifyCode() }
@@ -291,6 +297,7 @@ struct SettingsView: View {
                 } else {
                     TextField("Email", text: $email)
                         .textFieldStyle(.roundedBorder)
+                        .textContentType(.emailAddress)
                         .onSubmit(sendCode)
                     Button("Send Code") { sendCode() }
                         .disabled(isWorking || email.trimmingCharacters(in: .whitespaces).isEmpty)
