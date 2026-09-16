@@ -20,6 +20,6 @@ Run tests with Xcode's `flowmodoroTests` target. The test suite is deliberately 
 
 ## Product boundaries
 
-Supabase is an optional synchronization target, never the runtime database. The local outbox and SQL/RLS contract are documented in `docs/SYNC.md` and `Supabase/001_initial_schema.sql`; the app remains fully useful without those credentials. Widget extension source is in `WidgetExtension/` and is intentionally kept outside the app target until an App Group/widget target is added in Xcode.
+Supabase is an optional synchronization target, never the runtime database. The local outbox and SQL/RLS contract are documented in `docs/ARCHITECTURE.md`'s Sync section and `Supabase/001_initial_schema.sql`; the app remains fully useful without those credentials. Widget extension source is in `WidgetExtension/` and is intentionally kept outside the app target until an App Group/widget target is added in Xcode.
 
-See `docs/ARCHITECTURE.md`, `docs/TIMER_ENGINE.md`, and `docs/TESTING.md` for implementation details.
+See `docs/ARCHITECTURE.md` for implementation details, and the repo root's `STATUS.md` for product principles and current status.

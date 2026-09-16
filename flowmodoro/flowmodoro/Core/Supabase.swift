@@ -70,7 +70,7 @@ struct SyncStatus: Equatable, Sendable {
 /// AppStore owns the outbox and decides *what* to send; this decides how to
 /// authenticate and how to actually reach Supabase. Local-first is preserved:
 /// nothing here is on the path of starting a timer or recording a session —
-/// see docs/SYNC.md.
+/// see docs/ARCHITECTURE.md's Sync section.
 @MainActor
 @Observable
 final class LocalSyncEngine {
@@ -102,7 +102,7 @@ final class LocalSyncEngine {
             : "Local only"
     }
 
-    // MARK: - Auth (email OTP — see docs/SYNC.md for the dashboard step this needs)
+    // MARK: - Auth (email OTP — see docs/ARCHITECTURE.md's Sync section for the dashboard step this needs)
 
     func requestSignIn(email: String) async throws {
         try await client.auth.signInWithOTP(email: email)

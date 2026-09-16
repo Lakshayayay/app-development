@@ -4,7 +4,7 @@ import AppKit
 /// monitor that intercepts right-clicks on the status bar item and pops a
 /// native NSMenu with a small, non-intrusive set of controls — pause/resume,
 /// stop, and completing the running task — without replacing MenuBarExtra
-/// with a manual NSStatusItem (see docs/ARCHITECTURE_DECISIONS.md).
+/// with a manual NSStatusItem (see docs/ARCHITECTURE.md's Decisions log).
 @MainActor
 final class StatusItemContextMenu: NSObject {
     private weak var store: AppStore?

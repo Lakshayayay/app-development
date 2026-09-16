@@ -8,7 +8,7 @@
 
 **Tech Stack:** Swift 5 language mode (default `MainActor` isolation), SwiftUI with Liquid Glass, macOS 26.5, SwiftData, Swift Charts, Swift Testing, supabase-swift. No new dependencies.
 
-**Spec:** the 2026-09-16 request: B Focused-style pre-start configuration (work/break intervals, cycle count, auto-break, auto-continue), a poppy statistics graph with the last columns removed, performance, security, and the current theme kept. Product constraints come from `PRINCIPLES.md`.
+**Spec:** the 2026-09-16 request: B Focused-style pre-start configuration (work/break intervals, cycle count, auto-break, auto-continue), a poppy statistics graph with the last columns removed, performance, security, and the current theme kept. Product constraints come from `STATUS.md`'s Product Principles section (was `PRINCIPLES.md` until the 2026-09-17 doc consolidation — see that note under Task 3.4).
 
 ---
 
@@ -1106,17 +1106,19 @@ git commit -m "perf(sync): coalesce outbox drains, never overlap"
 
 ### Task 3.4: After-benchmarks
 
-- [ ] **Step 1:** Repeat Task 0.1 Step 4 exactly (Debug, `-demoData`, same scenarios) and fill in the After column of `flowmodoro/docs/PERFORMANCE.md`.
+> **2026-09-17 note:** `flowmodoro/docs/PERFORMANCE.md`, `SYNC.md`, `TESTING.md`, `TIMER_ENGINE.md`, `DATA_MODEL.md`, and `ARCHITECTURE_DECISIONS.md` were consolidated into one `flowmodoro/docs/ARCHITECTURE.md` (see its "Performance" section for the existing Before column and table shape, and its "Decisions log" section for where a new decision entry goes). `PRINCIPLES.md` was folded into `STATUS.md`. Below, read every `flowmodoro/docs/PERFORMANCE.md` as `flowmodoro/docs/ARCHITECTURE.md`'s Performance section instead.
+
+- [ ] **Step 1:** Repeat Task 0.1 Step 4 exactly (Debug, `-demoData`, same scenarios) and fill in the After column of `flowmodoro/docs/ARCHITECTURE.md`'s Performance table.
 - [ ] **Step 2: Acceptance.**
   - S4 body updates per sweep drop by at least 10×.
   - S2 and S3 CPU are no higher than before.
   - S1 stays near zero idle wakeups.
   - If S4 still shows hitches, the next step (not done pre-emptively) is to move the heatmap's hover state into an `@Observable` holder read only by the caption, so the chart body never re-runs on hover.
-- [ ] **Step 3:** Update `STATUS.md`: add the config card, stats restyle and measured performance to "Built and working", and delete the "profiling harness … not done" paragraph.
+- [ ] **Step 3:** Update `STATUS.md`: move this branch's "In progress" checklist into "Built and working" now that everything's done, and fold Task 3.4's own row from that checklist away.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add flowmodoro/docs/PERFORMANCE.md STATUS.md
+git add flowmodoro/docs/ARCHITECTURE.md STATUS.md
 git commit -m "docs(perf): before/after measurements; status update"
 ```
 

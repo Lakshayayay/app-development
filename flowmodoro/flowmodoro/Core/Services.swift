@@ -18,7 +18,7 @@ final class NotificationService {
     /// Fixed identifier (not a fresh UUID per call): scheduling with it replaces
     /// any still-pending completion notification, and cancelling is a plain
     /// synchronous removal instead of an async fetch-then-remove that could
-    /// race with a new add — see ARCHITECTURE_DECISIONS.md.
+    /// race with a new add — see docs/ARCHITECTURE.md's Decisions log.
     private static let intervalIdentifier = "flowmodo.interval"
 
     func scheduleIntervalCompletion(at date: Date, title: String, body: String, sound: Bool) {

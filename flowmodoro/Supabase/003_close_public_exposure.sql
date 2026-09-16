@@ -1,7 +1,7 @@
 -- Follow-up from the same get_advisors check that produced 002: this one
 -- closes an actual security exposure rather than a performance advisory.
 -- Not yet applied to the live project — needs an explicit owner go-ahead
--- (see docs/SYNC.md) before running this against the database.
+-- (see docs/ARCHITECTURE.md's Sync section) before running this against the database.
 
 -- daily_focus_logs is a SECURITY DEFINER view over focus_sessions that anon
 -- could SELECT: it bypassed RLS and exposed every user's user_id and daily

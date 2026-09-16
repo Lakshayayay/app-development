@@ -1,5 +1,5 @@
 -- Follow-up from the get_advisors check run against the live project
--- (docs/SYNC.md's "RLS verification" item): confirmed RLS is already
+-- (docs/ARCHITECTURE.md's Sync section, "RLS verification" item): confirmed RLS is already
 -- enabled on all four Flowmodora tables. This migration only fixes two
 -- performance advisories on top of that — no security-behavior change.
 
