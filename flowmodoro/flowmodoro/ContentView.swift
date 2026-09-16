@@ -245,12 +245,7 @@ struct SettingsView: View {
                 }
                 HStack { Text("Flowmodoro break ratio"); Spacer(); Stepper(value: Binding(get: { store.settings.flowBreakRatio }, set: { store.settings.flowBreakRatio = max(1, $0); store.updateSettings() }), in: 1...20, step: 1) { Text("1:\(Int(store.settings.flowBreakRatio))") } }
                 Toggle("Auto-start Flowmodoro break", isOn: Binding(get: { store.settings.flowAutoStartBreak }, set: { store.settings.flowAutoStartBreak = $0; store.updateSettings() }))
-                HStack { Text("Pomodoro work"); Spacer(); DurationStepper(value: Binding(get: { store.settings.pomodoroWorkDuration }, set: { store.settings.pomodoroWorkDuration = $0; store.updateSettings() })) }
-                HStack { Text("Short break"); Spacer(); DurationStepper(value: Binding(get: { store.settings.pomodoroShortBreakDuration }, set: { store.settings.pomodoroShortBreakDuration = $0; store.updateSettings() })) }
-                HStack { Text("Long break"); Spacer(); DurationStepper(value: Binding(get: { store.settings.pomodoroLongBreakDuration }, set: { store.settings.pomodoroLongBreakDuration = $0; store.updateSettings() })) }
-                Stepper("Long break after \(store.settings.pomodoroCyclesBeforeLongBreak) cycles", value: Binding(get: { store.settings.pomodoroCyclesBeforeLongBreak }, set: { store.settings.pomodoroCyclesBeforeLongBreak = max(1, $0); store.updateSettings() }), in: 1...12)
-                Toggle("Auto-start next break", isOn: Binding(get: { store.settings.pomodoroAutoStartBreak }, set: { store.settings.pomodoroAutoStartBreak = $0; store.updateSettings() }))
-                Toggle("Auto-start next focus", isOn: Binding(get: { store.settings.pomodoroAutoStartFocus }, set: { store.settings.pomodoroAutoStartFocus = $0; store.updateSettings() }))
+                PomodoroConfigFields()
                 Toggle("Show Pause button", isOn: Binding(get: { store.settings.showPauseButton }, set: { store.settings.showPauseButton = $0; store.updateSettings() }))
                 HStack {
                     Text("Daily goal"); Spacer()

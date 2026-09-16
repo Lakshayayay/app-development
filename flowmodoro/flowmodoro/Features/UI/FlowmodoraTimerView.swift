@@ -13,8 +13,17 @@ struct FlowmodoraTimerView: View {
         // glass — lighter material drawing attention to what's interactive.
         VStack(spacing: 20) {
             timerCircle
+            if showsConfig {
+                PomodoroConfigCard()
+                    .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
+            }
             controls
         }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: showsConfig)
+    }
+
+    private var showsConfig: Bool {
+        store.timer.phase == .idle && store.settings.selectedMode == .pomodoro
     }
 
     private var timerCircle: some View {
@@ -164,14 +173,18 @@ struct FlowmodoraTimerView: View {
         case .suggestedBreak:
             return formatDuration(store.timer.snapshot.suggestedBreak ?? 0, style: .timer)
         case .idle:
-            let upcoming = store.timer.mode == .flowmodoro ? 0 : store.settings.pomodoroWorkDuration
+            // settings.selectedMode, not timer.mode: the snapshot's mode only
+            // refreshes on reset(), so it's stale right after switching the picker.
+            let upcoming = store.settings.selectedMode == .flowmodoro ? 0 : store.settings.pomodoroWorkDuration
             return formatDuration(upcoming, style: .timer)
         }
     }
 
     private var subtitle: String {
         switch store.timer.phase {
-        case .focus, .pausedFocus: return ""
+        case .focus, .pausedFocus:
+            guard store.timer.mode == .pomodoro, let rounds = store.timer.snapshot.pomodoroPlan?.rounds, rounds > 0 else { return "" }
+            return "Round \((store.timer.snapshot.roundsCompleted ?? 0) + 1) of \(rounds)"
         case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long break" : "Break"
         case .suggestedBreak: return "Suggested break"
         case .idle: return "Ready"
