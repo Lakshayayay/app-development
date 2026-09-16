@@ -29,6 +29,7 @@ final class AppStore {
 
     private var contextMenu: StatusItemContextMenu?
     private var outboxRetryTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
     private var dayChangeObserver: NSObjectProtocol?
 
@@ -151,6 +152,20 @@ final class AppStore {
         try? modelContext.save()
         syncEngine.refresh(pendingChanges: pendingOutboxCount())
         scheduleOutboxRetry()
+    }
+
+    /// Merges a burst of writes (holding a stepper saves once per step) into a
+    /// single sync, and waits for any sync already running rather than
+    /// overlapping it: overlapping syncs fetched the same queued entries and
+    /// uploaded each one more than once.
+    private func requestSync() {
+        syncTask?.cancel()
+        syncTask = Task { [weak self, previous = syncTask] in
+            await previous?.value
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await self?.attemptSync()
+        }
     }
 
     /// Retries a non-empty outbox on a backoff instead of polling every
@@ -301,7 +316,7 @@ final class AppStore {
                     payload: outboxPayload(entityType: entityType, entityID: taskID, operation: operation)
                 ))
                 try modelContext.save()
-                Task { await attemptSync() }
+                requestSync()
             }
             syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
