@@ -13,26 +13,55 @@ struct StatisticsView: View {
     private static let periods: [StatisticsPeriod] = [.week, .month, .year, .total]
 
     var body: some View {
+        // Everything that scales with history is derived here, once per store
+        // write or period change, and passed down as plain values. The sections
+        // own their hover/selection state, so a pointer move re-runs only them.
+        let values = StatisticsEngine.filteredSessions(store.sessionValues, period: period)
+        let goal = store.settings.dailyFocusGoal
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HeroRow()
-                HeatmapSection()
+                HeatmapSection(cells: HeatmapCell.pastYear(store.dailyTotals), goal: goal)
                 VStack(alignment: .leading, spacing: 10) {
                     Picker("Period", selection: $period) {
                         ForEach(Self.periods) { Text($0 == .total ? "All" : $0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    ProgressSection(period: period)
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: period)
+                    ProgressSection(
+                        daily: StatisticsEngine.dailyFocus(store.sessionValues, period: period),
+                        summary: StatisticsEngine.summary(values),
+                        goal: goal
+                    )
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: period)
                 }
-                MilestoneSection()
-                TaskBreakdownSection(period: period)
+                MilestoneSection(series: cumulativeSeries)
+                TaskBreakdownSection(bars: taskBars(values))
             }
             .padding(24)
         }
         .navigationTitle("Statistics")
         .frame(minWidth: 680, minHeight: 720)
     }
+
+    private var cumulativeSeries: [DailyFocus] {
+        guard let earliest = store.dailyTotals.keys.min() else { return [] }
+        let days = StatisticsEngine.days(from: earliest, through: .now)
+        return StatisticsEngine.cumulative(StatisticsEngine.zeroFilled(store.dailyTotals, days: days))
+    }
+
+    private func taskBars(_ values: [FocusSessionValue]) -> [TaskBar] {
+        let factors = StatisticsEngine.taskFactors(values)
+        var bars = factors.prefix(5).map { TaskBar(name: store.taskTitle(for: $0.taskID), duration: $0.totalFocused) }
+        let other = factors.dropFirst(5).reduce(0) { $0 + $1.totalFocused }
+        if other > 0 { bars.append(TaskBar(name: "Other", duration: other)) }
+        return bars
+    }
+}
+
+private struct TaskBar: Identifiable, Equatable {
+    let name: String
+    let duration: TimeInterval
+    var id: String { name }
 }
 
 // MARK: - Hero row
@@ -128,28 +157,30 @@ private struct ProgressRing: View {
 
 // MARK: - Heatmap
 
-private struct HeatmapCell: Identifiable {
+struct HeatmapCell: Identifiable, Equatable {
     let date: Date
     let weekIndex: Int
     let weekday: Int
     let duration: TimeInterval
     var id: Date { date }
+
+    /// 52 trailing weeks from a week start through today, in day order, so a
+    /// cell's index is always `weekIndex * 7 + weekday`.
+    static func pastYear(_ dailyTotals: [Date: TimeInterval], calendar: Calendar = .current, now: Date = .now) -> [HeatmapCell] {
+        let today = calendar.startOfDay(for: now)
+        guard let start = calendar.date(byAdding: .day, value: -363, to: today) else { return [] }
+        let weekStart = calendar.dateInterval(of: .weekOfYear, for: start)?.start ?? start
+        return StatisticsEngine.days(from: weekStart, through: today, calendar: calendar).map { day in
+            let offset = calendar.dateComponents([.day], from: weekStart, to: day).day ?? 0
+            return HeatmapCell(date: day, weekIndex: offset / 7, weekday: offset % 7, duration: dailyTotals[day] ?? 0)
+        }
+    }
 }
 
 private struct HeatmapSection: View {
-    @Environment(AppStore.self) private var store
+    let cells: [HeatmapCell]
+    let goal: TimeInterval
     @State private var hovered: HeatmapCell?
-
-    private var cells: [HeatmapCell] {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: .now)
-        guard let start = cal.date(byAdding: .day, value: -363, to: today) else { return [] }
-        let weekStart = cal.dateInterval(of: .weekOfYear, for: start)?.start ?? start
-        return StatisticsEngine.days(from: weekStart, through: today, calendar: cal).map { day in
-            let offset = cal.dateComponents([.day], from: weekStart, to: day).day ?? 0
-            return HeatmapCell(date: day, weekIndex: offset / 7, weekday: offset % 7, duration: store.dailyTotals[day] ?? 0)
-        }
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -167,16 +198,17 @@ private struct HeatmapSection: View {
                     Rectangle().fill(.clear).contentShape(Rectangle())
                         .onContinuousHover { phase in
                             guard let plotFrame = proxy.plotFrame else { return }
-                            switch phase {
-                            case .active(let location):
+                            var cell: HeatmapCell?
+                            if case .active(let location) = phase {
                                 let origin = geo[plotFrame].origin
-                                let point = CGPoint(x: location.x - origin.x, y: location.y - origin.y)
-                                if let (week, row) = proxy.value(at: point, as: (Int, Int).self) {
-                                    hovered = cells.first { $0.weekIndex == week && 6 - $0.weekday == row }
+                                if let (week, row) = proxy.value(at: CGPoint(x: location.x - origin.x, y: location.y - origin.y), as: (Int, Int).self),
+                                   (0...6).contains(row) {
+                                    let index = week * 7 + (6 - row)
+                                    cell = cells.indices.contains(index) ? cells[index] : nil
                                 }
-                            case .ended:
-                                hovered = nil
                             }
+                            // Dozens of pointer events land inside one cell; only a new cell re-renders.
+                            if cell != hovered { hovered = cell }
                         }
                 }
             }
@@ -190,7 +222,6 @@ private struct HeatmapSection: View {
     }
 
     private func level(_ duration: TimeInterval) -> Double {
-        let goal = store.settings.dailyFocusGoal
         guard goal > 0 else { return duration > 0 ? 0.6 : 0.08 }
         switch duration {
         case 0: return 0.08
@@ -205,13 +236,10 @@ private struct HeatmapSection: View {
 // MARK: - Progress (bars over the selected period)
 
 private struct ProgressSection: View {
-    @Environment(AppStore.self) private var store
-    let period: StatisticsPeriod
-    @State private var selectedDate: Date?
-
-    private var values: [FocusSessionValue] { StatisticsEngine.filteredSessions(store.sessionValues, period: period) }
-    private var summary: FocusSummary { StatisticsEngine.summary(values) }
-    private var daily: [DailyFocus] { StatisticsEngine.dailyFocus(store.sessionValues, period: period) }
+    let daily: [DailyFocus]
+    let summary: FocusSummary
+    let goal: TimeInterval
+    @State private var selectedDay: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -227,15 +255,22 @@ private struct ProgressSection: View {
                 Chart {
                     ForEach(daily) { day in
                         BarMark(x: .value("Day", day.date, unit: .day), y: .value("Minutes", day.duration / 60))
-                            .foregroundStyle(Color.accentColor.opacity(day.duration >= store.settings.dailyFocusGoal ? 1 : 0.35))
+                            .foregroundStyle(Color.accentColor.opacity(day.duration >= goal ? 1 : 0.35))
                     }
-                    RuleMark(y: .value("Goal", store.settings.dailyFocusGoal / 60))
+                    RuleMark(y: .value("Goal", goal / 60))
                         .foregroundStyle(.secondary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                 }
                 .frame(height: 140)
-                .chartXSelection(value: $selectedDate)
-                if let match = selectedDay {
+                .chartXSelection(value: Binding(
+                    get: { selectedDay },
+                    // Snapped to the day: re-renders once per bar crossed, not per pointer event.
+                    set: { date in
+                        let day = date.map { Calendar.current.startOfDay(for: $0) }
+                        if day != selectedDay { selectedDay = day }
+                    }
+                ))
+                if let match {
                     Text("\(match.date.formatted(date: .abbreviated, time: .omitted)) · \(formatDuration(match.duration))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -243,23 +278,15 @@ private struct ProgressSection: View {
         }
     }
 
-    private var selectedDay: DailyFocus? {
-        guard let selectedDate else { return nil }
-        return daily.min { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }
+    private var match: DailyFocus? {
+        selectedDay.flatMap { day in daily.first { $0.date == day } }
     }
 }
 
 // MARK: - Milestones
 
 private struct MilestoneSection: View {
-    @Environment(AppStore.self) private var store
-
-    private var series: [DailyFocus] {
-        let cal = Calendar.current
-        guard let earliest = store.dailyTotals.keys.min() else { return [] }
-        let days = StatisticsEngine.days(from: earliest, through: .now, calendar: cal)
-        return StatisticsEngine.cumulative(StatisticsEngine.zeroFilled(store.dailyTotals, days: days))
-    }
+    let series: [DailyFocus]
 
     private var total: TimeInterval { series.last?.duration ?? 0 }
     private var milestone: TimeInterval? { StatisticsEngine.nextMilestone(total: total) }
@@ -299,17 +326,7 @@ private struct MilestoneSection: View {
 // MARK: - By task
 
 private struct TaskBreakdownSection: View {
-    @Environment(AppStore.self) private var store
-    let period: StatisticsPeriod
-
-    private var bars: [(name: String, duration: TimeInterval)] {
-        let values = StatisticsEngine.filteredSessions(store.sessionValues, period: period)
-        let factors = StatisticsEngine.taskFactors(values)
-        var result = factors.prefix(5).map { (store.taskTitle(for: $0.taskID), $0.totalFocused) }
-        let other = factors.dropFirst(5).reduce(0) { $0 + $1.totalFocused }
-        if other > 0 { result.append(("Other", other)) }
-        return result
-    }
+    let bars: [TaskBar]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -317,7 +334,7 @@ private struct TaskBreakdownSection: View {
             if bars.isEmpty {
                 Text("No sessions in this period yet.").foregroundStyle(.secondary)
             } else {
-                Chart(bars, id: \.name) { bar in
+                Chart(bars) { bar in
                     BarMark(x: .value("Minutes", bar.duration / 60), y: .value("Task", bar.name))
                         .foregroundStyle(Color.accentColor.gradient)
                 }

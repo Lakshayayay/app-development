@@ -341,6 +341,18 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test func heatmapCellIndexIsWeekTimesSevenPlusWeekday() {
+        // Hover resolves a cell by index (week * 7 + weekday) instead of scanning;
+        // this invariant is what makes that lookup correct.
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let cells = HeatmapCell.pastYear([:], calendar: calendar, now: now)
+        for (index, cell) in cells.enumerated() {
+            #expect(index == cell.weekIndex * 7 + cell.weekday)
+        }
+        #expect(cells.last?.date == calendar.startOfDay(for: now))
+    }
+
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {
         let record = FocusSessionRecord(taskID: taskID, mode: .flowmodoro, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(duration), focusedDuration: duration, plannedDuration: nil, completed: !interrupted, interrupted: interrupted)
         return FocusSessionValue(record)
