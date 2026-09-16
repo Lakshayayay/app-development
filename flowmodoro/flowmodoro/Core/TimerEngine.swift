@@ -77,6 +77,13 @@ final class TimerEngine {
             snapshot.pomodoroPlan = committed
             snapshot.plannedDuration = committed.work
             snapshot.countdownEnd = now.addingTimeInterval(committed.work)
+            // A fresh manual Start always begins at round zero. An idle
+            // snapshot can carry a stale count left behind by a break that
+            // ended without auto-continuing (autoStartFocus off, or the
+            // sleep grace exceeded) — see completeBreak, which restores the
+            // count itself right after this call when it's the one auto-
+            // continuing a round rather than the user starting fresh.
+            snapshot.roundsCompleted = nil
         } else {
             snapshot.plannedDuration = nil
             snapshot.pomodoroCycle = 0
@@ -257,7 +264,14 @@ final class TimerEngine {
             : TimerSnapshot(mode: mode, taskID: taskID, pomodoroCycle: snapshot.pomodoroCycle, roundsCompleted: snapshot.roundsCompleted)
         persist()
         // Starts at `now`, never backdated to `end`.
-        if shouldStartFocus { startFocus(taskID: taskID, mode: mode, plan: plan, now: now) }
+        if shouldStartFocus {
+            // startFocus always clears roundsCompleted, assuming a fresh
+            // manual start; restore the count this auto-continued round
+            // actually carries.
+            let preservedRounds = snapshot.roundsCompleted
+            startFocus(taskID: taskID, mode: mode, plan: plan, now: now)
+            snapshot.roundsCompleted = preservedRounds
+        }
     }
 
     private func isPomodoroIntervalComplete(at now: Date) -> Bool {

@@ -314,6 +314,33 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test @MainActor func freshManualStartClearsStaleRoundsCompleted() {
+        // Regression: a break that ends without auto-continuing (grace
+        // exceeded here) left roundsCompleted on the idle snapshot. A later
+        // *manual* Start must not inherit it — rounds=4 after 2 rounds this
+        // morning should give 4 fresh rounds this afternoon, not 2 more.
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 9_000)
+        let taskID = UUID()
+        let plan = PomodoroPlan(work: 60, shortBreak: 60, longBreak: 60, rounds: 4, autoStartBreak: true, autoStartFocus: true)
+
+        engine.startFocus(taskID: taskID, mode: .pomodoro, plan: plan, now: start)
+        engine.refresh(at: start.addingTimeInterval(60))                    // round 1 done → break
+        engine.refresh(at: start.addingTimeInterval(120))                   // break ends on time → round 2 (auto-continue)
+        engine.refresh(at: start.addingTimeInterval(180))                   // round 2 done → break
+        #expect(engine.snapshot.roundsCompleted == 2)
+        engine.refresh(at: start.addingTimeInterval(180 + 60 + 3 * 3_600))  // Mac woke 3 h later: grace exceeded, run not finished (2 < 4)
+        #expect(engine.phase == .idle)
+        #expect(engine.snapshot.roundsCompleted == 2) // the leak: idle snapshot still carries the stale count
+
+        let afternoon = start.addingTimeInterval(180 + 60 + 4 * 3_600)
+        engine.startFocus(taskID: taskID, mode: .pomodoro, plan: plan, now: afternoon)
+        #expect(engine.snapshot.roundsCompleted == nil) // fresh manual Start must not inherit it
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {
         let record = FocusSessionRecord(taskID: taskID, mode: .flowmodoro, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(duration), focusedDuration: duration, plannedDuration: nil, completed: !interrupted, interrupted: interrupted)
         return FocusSessionValue(record)
