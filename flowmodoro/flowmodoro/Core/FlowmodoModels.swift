@@ -127,6 +127,8 @@ final class AppSettingsRecord {
     // Inline default (not just in init) so SwiftData's lightweight migration
     // can fill this in for AppSettingsRecord rows that already exist on disk.
     var dailyFocusGoal: TimeInterval = 30 * 60
+    /// Focus rounds per Pomodoro run; 0 = until stopped (the pre-rounds behavior).
+    var pomodoroRounds: Int = 0
     var updatedAt: Date
 
     init(now: Date = .now) {
@@ -147,6 +149,7 @@ final class AppSettingsRecord {
         self.pomodoroAutoStartFocus = false
         self.showPauseButton = true
         self.dailyFocusGoal = 30 * 60
+        self.pomodoroRounds = 0
         self.updatedAt = now
     }
 
@@ -222,4 +225,50 @@ struct TimerSnapshot: Codable, Sendable {
     var suggestedBreak: TimeInterval?
     var pomodoroCycle: Int = 0
     var plannedDuration: TimeInterval?
+    // Optional so snapshots persisted by earlier builds still decode.
+    var pomodoroPlan: PomodoroPlan?
+    var roundsCompleted: Int?
+}
+
+/// The Pomodoro configuration committed when Start is pressed. Frozen into
+/// TimerSnapshot so editing Settings mid-run can't change a cycle already in
+/// progress, and a relaunch resumes the same plan.
+struct PomodoroPlan: Codable, Sendable, Equatable {
+    var work: TimeInterval = 25 * 60
+    var shortBreak: TimeInterval = 5 * 60
+    var longBreak: TimeInterval = 15 * 60
+    var cyclesBeforeLongBreak = 4
+    /// Focus rounds in this run; 0 = until stopped.
+    var rounds = 0
+    var autoStartBreak = true
+    var autoStartFocus = false
+
+    /// Settings are a trust boundary: a zero-length interval with
+    /// auto-continue on would complete, and record a session, every tick.
+    /// Ranges match the Settings steppers.
+    func clamped() -> PomodoroPlan {
+        var plan = self
+        plan.work = min(max(work, 60), 7_200)
+        plan.shortBreak = min(max(shortBreak, 60), 7_200)
+        plan.longBreak = min(max(longBreak, 60), 7_200)
+        plan.cyclesBeforeLongBreak = min(max(cyclesBeforeLongBreak, 1), 12)
+        plan.rounds = min(max(rounds, 0), 24)
+        return plan
+    }
+}
+
+extension PomodoroPlan {
+    // In an extension so the synthesized memberwise initializer survives.
+    init(settings: AppSettingsRecord?) {
+        guard let settings else { self.init(); return }
+        self.init(
+            work: settings.pomodoroWorkDuration,
+            shortBreak: settings.pomodoroShortBreakDuration,
+            longBreak: settings.pomodoroLongBreakDuration,
+            cyclesBeforeLongBreak: settings.pomodoroCyclesBeforeLongBreak,
+            rounds: settings.pomodoroRounds,
+            autoStartBreak: settings.pomodoroAutoStartBreak,
+            autoStartFocus: settings.pomodoroAutoStartFocus
+        )
+    }
 }

@@ -91,3 +91,9 @@
 - Reason: focus must never block on authentication, connectivity, or RLS.
 - Alternative: remote database as source of truth.
 - Source consulted: Supabase Postgres/RLS contract in `Supabase/001_initial_schema.sql`; official Supabase Swift SDK should be added only when package configuration is supplied.
+
+## Pomodoro plan frozen at Start; no auto-continue after a late break
+
+- Decision: pressing Start copies the Pomodoro settings into `TimerSnapshot.pomodoroPlan` (clamped to the Settings stepper ranges). Auto-continued rounds reuse it, and `roundsCompleted` ends a run after `rounds` focus intervals (0 = until stopped). A break end noticed more than `TimerEngine.autoContinueGrace` (120 s) late never auto-starts focus, and an auto-started focus begins when it is noticed, never backdated.
+- Reason: reading Settings live let a mid-run edit change a cycle already running. Worse, after sleep the tick loop chained break → backdated focus → completion and recorded focus that never happened (violates "focus data reflects what actually happened").
+- Alternative: keep reading Settings live and only add the grace check. Rejected: a running round could still change underneath the user, and the engine stayed untestable without a full AppStore.

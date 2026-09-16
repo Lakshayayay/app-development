@@ -253,6 +253,67 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test @MainActor func snapshotSavedBeforeRoundsStillDecodes() throws {
+        // Upgrade safety: earlier builds persisted snapshots without the new
+        // keys. Were either field non-optional, decoding would throw and
+        // TimerEngine.init would silently discard a running timer.
+        let legacy = #"{"phase":"focus","mode":"pomodoro","accumulatedFocus":0,"pomodoroCycle":1}"#
+        let snapshot = try JSONDecoder().decode(TimerSnapshot.self, from: Data(legacy.utf8))
+        #expect(snapshot.phase == .focus)
+        #expect(snapshot.pomodoroPlan == nil)
+        #expect(snapshot.roundsCompleted == nil)
+    }
+
+    @Test @MainActor func startFreezesClampedPlan() {
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 6_000)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: PomodoroPlan(work: 0, shortBreak: 10 * 60, rounds: 99), now: start)
+        #expect(engine.snapshot.pomodoroPlan?.work == 60) // 0 would complete, and record, every tick
+        #expect(engine.snapshot.pomodoroPlan?.rounds == 24)
+        #expect(engine.countdownRemaining(at: start) == 60)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test @MainActor func roundsLimitEndsRunAfterLastBreak() {
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 7_000)
+        let plan = PomodoroPlan(work: 60, shortBreak: 60, longBreak: 60, rounds: 2, autoStartBreak: true, autoStartFocus: true)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start)
+        engine.refresh(at: start.addingTimeInterval(60))   // round 1 done → break
+        #expect(engine.phase == .breakTimer)
+        engine.refresh(at: start.addingTimeInterval(120))  // break ends on time → round 2
+        #expect(engine.phase == .focus)
+        #expect(engine.snapshot.focusStartedAt == start.addingTimeInterval(120))
+        engine.refresh(at: start.addingTimeInterval(180))  // round 2 done → break
+        #expect(engine.snapshot.roundsCompleted == 2)
+        engine.refresh(at: start.addingTimeInterval(240))  // last break ends → run over
+        #expect(engine.phase == .idle)
+        #expect(engine.snapshot.roundsCompleted == nil)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test @MainActor func lateBreakEndDoesNotAutoStartFocus() {
+        // Regression: after sleeping through a break with auto-continue on, the
+        // tick loop chained break → backdated focus → completed focus → …,
+        // recording 25-minute sessions nobody worked.
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 8_000)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: PomodoroPlan(work: 60, shortBreak: 60, autoStartBreak: true, autoStartFocus: true), now: start)
+        engine.refresh(at: start.addingTimeInterval(60))               // → break ending at +120
+        engine.refresh(at: start.addingTimeInterval(120 + 3 * 3_600))  // Mac woke 3 h later
+        #expect(engine.phase == .idle)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {
         let record = FocusSessionRecord(taskID: taskID, mode: .flowmodoro, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(duration), focusedDuration: duration, plannedDuration: nil, completed: !interrupted, interrupted: interrupted)
         return FocusSessionValue(record)

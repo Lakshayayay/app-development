@@ -52,10 +52,15 @@ final class TimerEngine {
             return
         }
         guard snapshot.phase == .breakTimer, let end = snapshot.countdownEnd, now >= end else { return }
-        completeBreak(at: end)
+        completeBreak(at: end, observedAt: now)
     }
 
-    func startFocus(taskID: UUID?, mode: FocusMode, now: Date = .now) {
+    /// How late a break's end may be noticed and still auto-continue into focus.
+    /// Any later and the Mac was almost certainly asleep: starting a focus
+    /// interval then would record focus that never happened.
+    static let autoContinueGrace: TimeInterval = 120
+
+    func startFocus(taskID: UUID?, mode: FocusMode, plan: PomodoroPlan? = nil, now: Date = .now) {
         guard let taskID else { return }
         if snapshot.phase == .suggestedBreak { snapshot = TimerSnapshot() }
         guard snapshot.phase == .idle else { return }
@@ -65,10 +70,18 @@ final class TimerEngine {
         snapshot.focusStartedAt = now
         snapshot.focusResumedAt = now
         snapshot.accumulatedFocus = 0
-        snapshot.plannedDuration = mode == .pomodoro ? store?.settings.pomodoroWorkDuration : nil
-        snapshot.pomodoroCycle = snapshot.mode == .pomodoro ? snapshot.pomodoroCycle : 0
+        if mode == .pomodoro {
+            // Start commits the popover's configuration; an auto-continued round
+            // (completeBreak) passes its frozen plan instead.
+            let committed = (plan ?? PomodoroPlan(settings: store?.settings)).clamped()
+            snapshot.pomodoroPlan = committed
+            snapshot.plannedDuration = committed.work
+            snapshot.countdownEnd = now.addingTimeInterval(committed.work)
+        } else {
+            snapshot.plannedDuration = nil
+            snapshot.pomodoroCycle = 0
+        }
         snapshot.phase = .focus
-        if mode == .pomodoro { snapshot.countdownEnd = now.addingTimeInterval(snapshot.plannedDuration ?? 25 * 60) }
         persist()
         scheduleNotificationIfNeeded()
     }
@@ -200,18 +213,21 @@ final class TimerEngine {
     private func completePomodoroFocus(at date: Date) {
         let duration = focusDuration(at: date)
         guard duration > 0 else { reset(); return }
+        // Snapshots restored from before plans existed fall back to Settings.
+        let plan = snapshot.pomodoroPlan ?? PomodoroPlan(settings: store?.settings).clamped()
         let cycle = snapshot.pomodoroCycle + 1
-        let cyclesBeforeLong = max(1, store?.settings.pomodoroCyclesBeforeLongBreak ?? 4)
-        let isLongBreak = cycle >= cyclesBeforeLong
-        let breakDuration = isLongBreak ? (store?.settings.pomodoroLongBreakDuration ?? 15 * 60) : (store?.settings.pomodoroShortBreakDuration ?? 5 * 60)
+        let isLongBreak = cycle >= plan.cyclesBeforeLongBreak
+        let breakDuration = isLongBreak ? plan.longBreak : plan.shortBreak
         store?.recordSession(
             id: snapshot.sessionID ?? UUID(), taskID: snapshot.taskID, mode: .pomodoro,
             startedAt: snapshot.focusStartedAt ?? date, endedAt: date, focusedDuration: duration,
             plannedDuration: snapshot.plannedDuration, breakDuration: breakDuration, completed: true
         )
+        snapshot.pomodoroPlan = plan
+        snapshot.roundsCompleted = (snapshot.roundsCompleted ?? 0) + 1
 
         let nextCycle = isLongBreak ? 0 : cycle
-        if store?.settings.pomodoroAutoStartBreak == true {
+        if plan.autoStartBreak {
             snapshot.pomodoroCycle = nextCycle
             startBreak(duration: breakDuration, kind: isLongBreak ? .long : .short, now: date)
         } else {
@@ -226,14 +242,22 @@ final class TimerEngine {
         }
     }
 
-    private func completeBreak(at date: Date) {
-        let shouldStartFocus = snapshot.mode == .pomodoro && (store?.settings.pomodoroAutoStartFocus ?? false)
+    private func completeBreak(at end: Date, observedAt now: Date) {
+        let plan = snapshot.pomodoroPlan
+        let rounds = plan?.rounds ?? 0
+        let runFinished = rounds > 0 && (snapshot.roundsCompleted ?? 0) >= rounds
+        let shouldStartFocus = snapshot.mode == .pomodoro
+            && (plan?.autoStartFocus ?? store?.settings.pomodoroAutoStartFocus ?? false)
+            && !runFinished
+            && now.timeIntervalSince(end) <= Self.autoContinueGrace
         let mode = snapshot.mode
         let taskID = snapshot.taskID
-        let nextCycle = snapshot.pomodoroCycle
-        snapshot = TimerSnapshot(mode: mode, taskID: taskID, pomodoroCycle: nextCycle)
+        snapshot = runFinished
+            ? TimerSnapshot(mode: mode, taskID: taskID)
+            : TimerSnapshot(mode: mode, taskID: taskID, pomodoroCycle: snapshot.pomodoroCycle, roundsCompleted: snapshot.roundsCompleted)
         persist()
-        if shouldStartFocus { startFocus(taskID: taskID, mode: mode, now: date) }
+        // Starts at `now`, never backdated to `end`.
+        if shouldStartFocus { startFocus(taskID: taskID, mode: mode, plan: plan, now: now) }
     }
 
     private func isPomodoroIntervalComplete(at now: Date) -> Bool {
