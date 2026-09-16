@@ -742,7 +742,7 @@ In `HeatmapSection`: remove `@Environment(AppStore.self)` and the `cells` comput
 }
 ```
 
-In `ProgressSection`: remove the store and the computed `values`/`summary`/`daily`, and add `let daily: [DailyFocus]`, `let summary: FocusSummary`, `let goal: TimeInterval`. Replace `store.settings.dailyFocusGoal` with `goal`. Rename `@State selectedDate` to `selectedDay` and snap it to the day:
+In `ProgressSection`: remove the store and the computed `values`/`summary`/`daily`, and add `let daily: [DailyFocus]`, `let summary: FocusSummary`, `let goal: TimeInterval`. Replace `store.settings.dailyFocusGoal` with `goal`. **Delete the existing computed `private var selectedDay: DailyFocus? { … }` property entirely** — its lookup logic becomes the new `match` property below. Then rename `@State private var selectedDate: Date?` to `@State private var selectedDay: Date?` (now a plain day-snapped `Date?`, reusing the freed name) and snap it to the day:
 
 ```swift
 .chartXSelection(value: Binding(
