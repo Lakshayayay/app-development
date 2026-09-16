@@ -39,3 +39,6 @@ DerivedData/
 *.scratch.swift
 flowmodoro/patch_contentview.swift
 flowmodoro/test.swift
+
+# Superpowers SDD scratch workspace (ledgers, briefs, review packages)
+.superpowers/
