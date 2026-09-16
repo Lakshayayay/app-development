@@ -12,7 +12,7 @@ struct FlowmodoraTimerView: View {
         // legibility (apple-design §12). Only the buttons below get their own
         // glass — lighter material drawing attention to what's interactive.
         VStack(spacing: 20) {
-            timerCircle
+            TimerRing()
             if showsConfig {
                 PomodoroConfigCard()
                     .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
@@ -26,41 +26,112 @@ struct FlowmodoraTimerView: View {
         store.timer.phase == .idle && store.settings.selectedMode == .pomodoro
     }
 
-    private var timerCircle: some View {
-        // Driven by TimerEngine.now — its shared 1 Hz clock, ticking only
-        // while a timer is actually running — instead of a TimelineView
-        // rebuilding this subtree on its own schedule (previously ticked
-        // even while idle/paused). The ring still animates the gap between
-        // ticks itself, so 1 Hz reads as continuous.
-        let now = store.timer.now
-        return ZStack {
-            Circle()
-                .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
+    /// The only part of the timer UI that reads the 1 Hz clock. With it split
+    /// out, a tick re-renders just this view; FlowmodoraTimerView.body and its
+    /// glass controls no longer depend on `timer.now`.
+    private struct TimerRing: View {
+        @Environment(AppStore.self) private var store
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-            Circle()
-                .trim(from: 0, to: progress(at: now))
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .opacity(isPaused ? 0.5 : 1)
-                .animation(reduceMotion ? nil : .linear(duration: 1), value: progress(at: now))
+        var body: some View {
+            // Driven by TimerEngine.now — its shared 1 Hz clock, ticking only
+            // while a timer is actually running — instead of a TimelineView
+            // rebuilding this subtree on its own schedule (previously ticked
+            // even while idle/paused). The ring still animates the gap between
+            // ticks itself, so 1 Hz reads as continuous.
+            let now = store.timer.now
+            let progress = progress(at: now)
+            return ZStack {
+                Circle()
+                    .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
 
-            VStack(spacing: 8) {
-                Text(displayValue(at: now))
-                    .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(.primary)
-                    .contentTransition(.numericText())
-                    // Keyed on phase, not on the ticking value itself, so
-                    // this only rolls on a real discontinuity (start,
-                    // stop, skip) — a normal per-second tick hard-swaps,
-                    // the way a real clock does.
-                    .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: store.timer.phase)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .opacity(isPaused ? 0.5 : 1)
+                    .animation(reduceMotion ? nil : .linear(duration: 1), value: progress)
+                    // Each Flowmodoro hour is a new view, so the ring restarts
+                    // from empty instead of animating backwards around the
+                    // whole lap.
+                    .id(lap(at: now))
 
-                Text(subtitle)
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Text(displayValue(at: now))
+                        .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(.primary)
+                        .contentTransition(.numericText())
+                        // Keyed on phase, not on the ticking value itself, so
+                        // this only rolls on a real discontinuity (start,
+                        // stop, skip) — a normal per-second tick hard-swaps,
+                        // the way a real clock does.
+                        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: store.timer.phase)
+
+                    Text(subtitle)
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 250, height: 250)
+        }
+
+        private func lap(at date: Date) -> Int {
+            guard store.timer.mode == .flowmodoro else { return 0 }
+            return Int(store.timer.focusDuration(at: date) / 3600)
+        }
+
+        private var isPaused: Bool {
+            store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
+        }
+
+        private func progress(at date: Date) -> Double {
+            switch store.timer.phase {
+            case .idle, .suggestedBreak:
+                return 0
+            case .focus, .pausedFocus:
+                if store.timer.mode == .flowmodoro {
+                    // No fixed end to show a fraction of, so the ring reads like
+                    // a minute hand instead: one full lap per hour of focus.
+                    let elapsed = store.timer.focusDuration(at: date)
+                    return elapsed.truncatingRemainder(dividingBy: 3600) / 3600
+                } else {
+                    let remaining = store.timer.countdownRemaining(at: date)
+                    let total = store.timer.snapshot.plannedDuration ?? 25 * 60
+                    return total > 0 ? remaining / total : 0
+                }
+            case .breakTimer, .pausedBreak:
+                let remaining = store.timer.countdownRemaining(at: date)
+                let total = store.timer.snapshot.plannedDuration ?? remaining
+                return total > 0 ? remaining / total : 0
             }
         }
-        .frame(width: 250, height: 250)
+
+        private func displayValue(at date: Date) -> String {
+            switch store.timer.phase {
+            case .focus where store.timer.mode == .flowmodoro:
+                return formatDuration(store.timer.focusDuration(at: date), style: .timer)
+            case .focus, .pausedFocus, .breakTimer, .pausedBreak:
+                return formatDuration(store.timer.countdownRemaining(at: date), style: .timer)
+            case .suggestedBreak:
+                return formatDuration(store.timer.snapshot.suggestedBreak ?? 0, style: .timer)
+            case .idle:
+                // settings.selectedMode, not timer.mode: the snapshot's mode only
+                // refreshes on reset(), so it's stale right after switching the picker.
+                let upcoming = store.settings.selectedMode == .flowmodoro ? 0 : store.settings.pomodoroWorkDuration
+                return formatDuration(upcoming, style: .timer)
+            }
+        }
+
+        private var subtitle: String {
+            switch store.timer.phase {
+            case .focus, .pausedFocus:
+                guard store.timer.mode == .pomodoro, let rounds = store.timer.snapshot.pomodoroPlan?.rounds, rounds > 0 else { return "" }
+                return "Round \((store.timer.snapshot.roundsCompleted ?? 0) + 1) of \(rounds)"
+            case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long break" : "Break"
+            case .suggestedBreak: return "Suggested break"
+            case .idle: return "Ready"
+            }
+        }
     }
 
     private struct ControlButton: Identifiable {
@@ -135,59 +206,6 @@ struct FlowmodoraTimerView: View {
                 ControlButton(id: "primary", symbol: "cup.and.saucer.fill") { store.timer.startSuggestedBreak() },
                 ControlButton(id: "skip", symbol: "xmark") { store.timer.reset() },
             ]
-        }
-    }
-
-    private var isPaused: Bool {
-        store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
-    }
-
-    private func progress(at date: Date) -> Double {
-        switch store.timer.phase {
-        case .idle, .suggestedBreak:
-            return 0
-        case .focus, .pausedFocus:
-            if store.timer.mode == .flowmodoro {
-                // No fixed end to show a fraction of, so the ring reads like
-                // a minute hand instead: one full lap per hour of focus.
-                let elapsed = store.timer.focusDuration(at: date)
-                return elapsed.truncatingRemainder(dividingBy: 3600) / 3600
-            } else {
-                let remaining = store.timer.countdownRemaining(at: date)
-                let total = store.timer.snapshot.plannedDuration ?? 25 * 60
-                return total > 0 ? remaining / total : 0
-            }
-        case .breakTimer, .pausedBreak:
-            let remaining = store.timer.countdownRemaining(at: date)
-            let total = store.timer.snapshot.plannedDuration ?? remaining
-            return total > 0 ? remaining / total : 0
-        }
-    }
-
-    private func displayValue(at date: Date) -> String {
-        switch store.timer.phase {
-        case .focus where store.timer.mode == .flowmodoro:
-            return formatDuration(store.timer.focusDuration(at: date), style: .timer)
-        case .focus, .pausedFocus, .breakTimer, .pausedBreak:
-            return formatDuration(store.timer.countdownRemaining(at: date), style: .timer)
-        case .suggestedBreak:
-            return formatDuration(store.timer.snapshot.suggestedBreak ?? 0, style: .timer)
-        case .idle:
-            // settings.selectedMode, not timer.mode: the snapshot's mode only
-            // refreshes on reset(), so it's stale right after switching the picker.
-            let upcoming = store.settings.selectedMode == .flowmodoro ? 0 : store.settings.pomodoroWorkDuration
-            return formatDuration(upcoming, style: .timer)
-        }
-    }
-
-    private var subtitle: String {
-        switch store.timer.phase {
-        case .focus, .pausedFocus:
-            guard store.timer.mode == .pomodoro, let rounds = store.timer.snapshot.pomodoroPlan?.rounds, rounds > 0 else { return "" }
-            return "Round \((store.timer.snapshot.roundsCompleted ?? 0) + 1) of \(rounds)"
-        case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long break" : "Break"
-        case .suggestedBreak: return "Suggested break"
-        case .idle: return "Ready"
         }
     }
 }
