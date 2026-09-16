@@ -18,12 +18,28 @@ struct FlowmodoraPopover: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showingNewTask = false
 
+    /// openWindow(id:) alone shows the window but never brings it forward:
+    /// Flowmodora is LSUIElement (no Dock icon), and an accessory app isn't
+    /// auto-activated the way a regular app is when a new window appears —
+    /// the window opens behind whatever currently has focus. Every window
+    /// this popover opens routes through here so the fix lives in one place.
+    private func open(_ id: String) {
+        openWindow(id: id)
+        // Plain NSApp.activate() (macOS 14's less-forceful replacement for
+        // ignoringOtherApps:) did not reliably bring the window forward for
+        // this accessory app. Dispatched async so it runs after openWindow's
+        // own (also async) window creation, not racing it.
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().padding(.vertical, 14)
+            Divider().padding(.vertical, 10)
             taskSection
-            Divider().padding(.vertical, 14)
+            Divider().padding(.vertical, 10)
             timerSection
             Spacer(minLength: 12)
             footer
@@ -35,82 +51,82 @@ struct FlowmodoraPopover: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("FLOWMODORA")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .tracking(1.8)
+        HStack {
             Text(store.timer.phase == .idle ? "Ready to focus" : phaseTitle)
                 .font(.title3.weight(.semibold))
+            Spacer()
+            Picker("Mode", selection: Binding(get: { store.settings.selectedMode }, set: store.setMode)) {
+                ForEach(FocusMode.allCases) { mode in Text(mode.title).tag(mode) }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .disabled(store.timer.isActive)
         }
     }
 
     @ViewBuilder private var taskSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("TASK").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                Text("TASKS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
                 Button { showingNewTask = true } label: { Image(systemName: "plus") }
                     .buttonStyle(.plain)
                     .help("New task")
             }
-            if store.tasks.isEmpty {
+            let activeTasks = store.tasks.filter { !$0.isCompleted }
+            let completedTasks = store.tasks.filter(\.isCompleted)
+            if activeTasks.isEmpty && completedTasks.isEmpty {
                 Button("Create your first task") { showingNewTask = true }
                     .buttonStyle(.bordered)
             } else {
-                Picker("Task", selection: Binding(get: { store.settings.selectedTaskID }, set: { id in
-                    if let id, let task = store.tasks.first(where: { $0.id == id }) { store.selectTask(task) }
-                })) {
-                    Text("Select a task").tag(UUID?.none)
-                    ForEach(store.tasks.filter { !$0.isCompleted }) { task in
-                        Text(task.title).tag(Optional(task.id))
-                    }
+                VStack(spacing: 2) {
+                    ForEach(activeTasks) { task in TaskRow(task: task) }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
+                .animation(.smooth(duration: 0.25), value: activeTasks.map(\.id))
+                if !completedTasks.isEmpty {
+                    DisclosureGroup("Completed (\(completedTasks.count))") {
+                        VStack(spacing: 2) {
+                            ForEach(completedTasks) { task in TaskRow(task: task) }
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
             }
         }
         if showingNewTask {
+            // createTask already selects the new task — see AppStore.createTask.
             NewTaskInlineView(showingNewTask: $showingNewTask) { title in
-                if let task = store.createTask(title: title) {
-                    store.selectTask(task)
-                }
+                store.createTask(title: title)
             }
         }
     }
 
     private var timerSection: some View {
-        VStack(spacing: 14) {
-            HStack {
-                Text("MODE").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                Picker("Mode", selection: Binding(get: { store.settings.selectedMode }, set: store.setMode)) {
-                    ForEach(FocusMode.allCases) { mode in Text(mode.title).tag(mode) }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .disabled(store.timer.isActive)
-            }
-
-            FlowmodoraTimerView()
-                .frame(maxWidth: .infinity)
-                .padding(.top, 10)
-        }
+        FlowmodoraTimerView()
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
     }
-
-
 
     private var footer: some View {
         HStack {
-            let today = StatisticsEngine.filteredSessions(store.sessionValues, period: .today)
-            Text("Today: \(formatDuration(StatisticsEngine.summary(today).total))")
+            Button { open("statistics") } label: {
+                HStack(spacing: 4) {
+                    Text("Today \(formatDuration(store.todayTotal))")
+                    if store.streak.current > 0 {
+                        Text("· 🔥 \(store.streak.current)")
+                    }
+                }
                 .font(.subheadline).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
             Spacer()
             Menu {
-                Button("History") { openWindow(id: "history") }
-                Button("Statistics") { openWindow(id: "statistics") }
+                Button("History") { open("history") }
+                Button("Statistics") { open("statistics") }
                 Divider()
-                Button("Settings") { openWindow(id: "settings") }
+                Button("Settings") { open("settings") }
                 Divider()
                 Button("Quit Flowmodora") { NSApplication.shared.terminate(nil) }
             } label: { Image(systemName: "ellipsis.circle") }
@@ -128,28 +144,54 @@ struct FlowmodoraPopover: View {
     }
 }
 
-struct NewTaskView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    let onSave: (String) -> Void
+/// Selectable, completable row shown in the popover's inline task list —
+/// checkbox to complete, title, and today/total focused time (adding the
+/// running task's live elapsed time on top of AppStore's cached totals).
+struct TaskRow: View {
+    @Environment(AppStore.self) private var store
+    let task: FocusTask
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("New task").font(.title2.weight(.semibold))
-            TextField("What are you focusing on?", text: $title).textFieldStyle(.roundedBorder).onSubmit(save)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Create") { save() }.buttonStyle(.borderedProminent).disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24).frame(width: 320)
+    private var isSelected: Bool { store.settings.selectedTaskID == task.id }
+    private var liveElapsed: TimeInterval {
+        guard isSelected, store.timer.phase == .focus || store.timer.phase == .pausedFocus else { return 0 }
+        return store.timer.focusDuration(at: store.timer.now)
     }
 
-    private func save() {
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        onSave(title)
-        dismiss()
+    var body: some View {
+        HStack(spacing: 8) {
+            Button { store.toggleTask(task) } label: {
+                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(task.isCompleted ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+
+            Text(task.title)
+                .font(.subheadline)
+                .strikethrough(task.isCompleted)
+                .foregroundStyle(task.isCompleted ? .secondary : .primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(timeLabel)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        .background(isSelected ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !task.isCompleted, isSelected || !store.timer.isActive else { return }
+            store.selectTask(task)
+        }
+    }
+
+    private var timeLabel: String {
+        let totals = store.taskTotals[task.id]
+        let today = (totals?.today ?? 0) + liveElapsed
+        let total = (totals?.total ?? 0) + liveElapsed
+        return "\(formatDuration(today)) · \(formatDuration(total))"
     }
 }
 
@@ -177,67 +219,7 @@ struct HistoryView: View {
     }
 }
 
-struct StatisticsView: View {
-    @Environment(AppStore.self) private var store
-    @State private var period: StatisticsPeriod = .today
-
-    private var values: [FocusSessionValue] { StatisticsEngine.filteredSessions(store.sessionValues, period: period) }
-    private var summary: FocusSummary { StatisticsEngine.summary(values) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Picker("Period", selection: $period) { ForEach(StatisticsPeriod.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
-            HStack(spacing: 12) {
-                MetricCard(title: "Focus time", value: formatDuration(summary.total))
-                MetricCard(title: "Sessions", value: "\(summary.sessions)")
-                MetricCard(title: "Longest", value: formatDuration(summary.longest))
-                MetricCard(title: "Average", value: formatDuration(summary.average))
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Focus by day").font(.headline)
-                let daily = StatisticsEngine.dailyFocus(store.sessionValues, period: period)
-                if daily.allSatisfy({ $0.duration == 0 }) {
-                    Text("Start a session to see your focus pattern.").foregroundStyle(.secondary)
-                } else {
-                    Chart(daily) { day in
-                        BarMark(
-                            x: .value("Day", day.date, unit: .day),
-                            y: .value("Minutes", day.duration / 60)
-                        )
-                        .foregroundStyle(Color.accentColor.gradient)
-                    }
-                    .frame(height: 140)
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Focus by task").font(.headline)
-                ForEach(StatisticsEngine.taskFactors(values)) { factor in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(store.taskTitle(for: factor.taskID))
-                            Text("\(factor.sessionCount) session\(factor.sessionCount == 1 ? "" : "s") · avg \(formatDuration(factor.meanSession))")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(formatDuration(factor.totalFocused)).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            Spacer()
-        }
-        .padding(24).navigationTitle("Statistics").frame(minWidth: 620, minHeight: 480)
-    }
-}
-
-struct MetricCard: View {
-    let title: String
-    let value: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.title3.monospacedDigit().weight(.medium)) }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-    }
-}
+// StatisticsView lives in Features/UI/StatisticsView.swift.
 
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
@@ -270,6 +252,13 @@ struct SettingsView: View {
                 Toggle("Auto-start next break", isOn: Binding(get: { store.settings.pomodoroAutoStartBreak }, set: { store.settings.pomodoroAutoStartBreak = $0; store.updateSettings() }))
                 Toggle("Auto-start next focus", isOn: Binding(get: { store.settings.pomodoroAutoStartFocus }, set: { store.settings.pomodoroAutoStartFocus = $0; store.updateSettings() }))
                 Toggle("Show Pause button", isOn: Binding(get: { store.settings.showPauseButton }, set: { store.settings.showPauseButton = $0; store.updateSettings() }))
+                HStack {
+                    Text("Daily goal"); Spacer()
+                    DurationStepper(
+                        value: Binding(get: { store.settings.dailyFocusGoal }, set: { store.settings.dailyFocusGoal = $0; store.updateSettings() }),
+                        range: 5 * 60...8 * 60 * 60, step: 5 * 60
+                    )
+                }
             }
             Section("Sync") {
                 Label(store.syncEngine.status.message, systemImage: "externaldrive")
@@ -346,7 +335,9 @@ struct SettingsView: View {
 
 struct DurationStepper: View {
     @Binding var value: TimeInterval
-    var body: some View { Stepper(value: $value, in: 60...7200, step: 60) { Text(formatDuration(value)) } }
+    var range: ClosedRange<TimeInterval> = 60...7200
+    var step: TimeInterval = 60
+    var body: some View { Stepper(value: $value, in: range, step: step) { Text(formatDuration(value)) } }
 }
 
 struct NewTaskInlineView: View {

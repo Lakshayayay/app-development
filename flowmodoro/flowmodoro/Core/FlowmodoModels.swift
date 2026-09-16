@@ -124,6 +124,9 @@ final class AppSettingsRecord {
     var pomodoroAutoStartBreak: Bool
     var pomodoroAutoStartFocus: Bool
     var showPauseButton: Bool
+    // Inline default (not just in init) so SwiftData's lightweight migration
+    // can fill this in for AppSettingsRecord rows that already exist on disk.
+    var dailyFocusGoal: TimeInterval = 30 * 60
     var updatedAt: Date
 
     init(now: Date = .now) {
@@ -143,6 +146,7 @@ final class AppSettingsRecord {
         self.pomodoroAutoStartBreak = true
         self.pomodoroAutoStartFocus = false
         self.showPauseButton = true
+        self.dailyFocusGoal = 30 * 60
         self.updatedAt = now
     }
 

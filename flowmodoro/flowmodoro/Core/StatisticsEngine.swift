@@ -28,6 +28,16 @@ struct DailyFocus: Identifiable, Sendable, Equatable {
 /// or composite "productivity score": the product spec explicitly rules those
 /// out, and every field here is a plain sum/count/average a user can verify
 /// by rereading their own History.
+struct TaskTotal: Sendable, Equatable {
+    let today: TimeInterval
+    let total: TimeInterval
+}
+
+struct Streak: Sendable, Equatable {
+    let current: Int
+    let best: Int
+}
+
 struct TaskFactor: Identifiable, Sendable, Equatable {
     let taskID: UUID?
     let totalFocused: TimeInterval
@@ -77,15 +87,21 @@ enum StatisticsEngine {
         )
     }
 
+    /// One total-per-calendar-day pass — cached once per AppStore.reload()
+    /// (see AppStore.dailyTotals) instead of regrouped by every screen that
+    /// needs a day bucket (History chart, streak, heatmap).
+    static func dailyTotals(_ sessions: [FocusSessionValue], calendar: Calendar = .current) -> [Date: TimeInterval] {
+        Dictionary(grouping: sessions) { calendar.startOfDay(for: $0.startedAt) }
+            .mapValues { $0.reduce(0) { $0 + $1.focusedDuration } }
+    }
+
     static func dailyFocus(
         _ sessions: [FocusSessionValue],
         period: StatisticsPeriod,
         calendar: Calendar = .current,
         now: Date = .now
     ) -> [DailyFocus] {
-        let grouped = Dictionary(grouping: filteredSessions(sessions, period: period, calendar: calendar, now: now)) {
-            calendar.startOfDay(for: $0.startedAt)
-        }.mapValues { $0.reduce(0) { $0 + $1.focusedDuration } }
+        let grouped = dailyTotals(filteredSessions(sessions, period: period, calendar: calendar, now: now), calendar: calendar)
 
         // Zero-fill every day from the period's start through today, so a
         // quiet day reads as "0m", not as a gap the chart silently skips.
@@ -93,7 +109,21 @@ enum StatisticsEngine {
         guard let days = dayRange(for: period, calendar: calendar, now: now) else {
             return grouped.map { DailyFocus(date: $0.key, duration: $0.value) }.sorted { $0.date < $1.date }
         }
-        return days.map { DailyFocus(date: $0, duration: grouped[$0] ?? 0) }
+        return zeroFilled(grouped, days: days)
+    }
+
+    /// Every day in `days`, defaulting missing entries to 0.
+    static func zeroFilled(_ grouped: [Date: TimeInterval], days: [Date]) -> [DailyFocus] {
+        days.map { DailyFocus(date: $0, duration: grouped[$0] ?? 0) }
+    }
+
+    /// Every calendar day from `start` through `end`, inclusive — shared by
+    /// the period charts (dayRange below) and the heatmap (52 trailing weeks).
+    static func days(from start: Date, through end: Date, calendar: Calendar = .current) -> [Date] {
+        let startDay = calendar.startOfDay(for: start)
+        let endDay = calendar.startOfDay(for: end)
+        let dayCount = max(0, calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0)
+        return (0...dayCount).compactMap { calendar.date(byAdding: .day, value: $0, to: startDay) }
     }
 
     private static func dayRange(for period: StatisticsPeriod, calendar: Calendar, now: Date) -> [Date]? {
@@ -106,9 +136,65 @@ enum StatisticsEngine {
         case .month: start = calendar.dateInterval(of: .month, for: now)?.start ?? today
         case .year: start = calendar.dateInterval(of: .year, for: now)?.start ?? today
         }
-        let startDay = calendar.startOfDay(for: start)
-        let dayCount = max(0, calendar.dateComponents([.day], from: startDay, to: today).day ?? 0)
-        return (0...dayCount).compactMap { calendar.date(byAdding: .day, value: $0, to: startDay) }
+        return days(from: start, through: now, calendar: calendar)
+    }
+
+    /// A day "counts" once its total meets `goal`. Current streak counts
+    /// consecutive counting days ending today; a day still in progress that
+    /// hasn't reached goal yet doesn't break the streak — it just isn't
+    /// counted yet, so the streak reads as of yesterday until it is.
+    static func streak(_ dailyTotals: [Date: TimeInterval], goal: TimeInterval, calendar: Calendar = .current, now: Date = .now) -> Streak {
+        guard goal > 0, let earliest = dailyTotals.keys.min() else { return Streak(current: 0, best: 0) }
+        let today = calendar.startOfDay(for: now)
+        func counts(_ day: Date) -> Bool { (dailyTotals[day] ?? 0) >= goal }
+
+        var best = 0
+        var running = 0
+        var current = 0
+        for day in days(from: earliest, through: today, calendar: calendar) {
+            let runningThroughYesterday = running
+            if counts(day) {
+                running += 1
+                best = max(best, running)
+            } else {
+                running = 0
+            }
+            if day == today {
+                current = counts(today) ? running : runningThroughYesterday
+            }
+        }
+        return Streak(current: current, best: best)
+    }
+
+    static func cumulative(_ daily: [DailyFocus]) -> [DailyFocus] {
+        var running: TimeInterval = 0
+        return daily.map { day in
+            running += day.duration
+            return DailyFocus(date: day.date, duration: running)
+        }
+    }
+
+    private static let milestones: [TimeInterval] = [10, 25, 50, 100, 250, 500, 1000].map { $0 * 3600 }
+
+    /// The smallest milestone not yet reached, or nil once every one is.
+    static func nextMilestone(total: TimeInterval) -> TimeInterval? {
+        milestones.first { $0 > total }
+    }
+
+    /// Per-task today/total focused time, cached once per AppStore.reload()
+    /// instead of recomputed on every popover render — see AppStore.taskTotals.
+    static func taskTotals(_ sessions: [FocusSessionValue], calendar: Calendar = .current, now: Date = .now) -> [UUID: TaskTotal] {
+        func sum(_ values: [FocusSessionValue]) -> [UUID: TimeInterval] {
+            Dictionary(grouping: values.compactMap { session in session.taskID.map { (session, $0) } }, by: \.1)
+                .mapValues { $0.reduce(0) { $0 + $1.0.focusedDuration } }
+        }
+        let todayByTask = sum(filteredSessions(sessions, period: .today, calendar: calendar, now: now))
+        let totalByTask = sum(sessions)
+        var result: [UUID: TaskTotal] = [:]
+        for taskID in Set(todayByTask.keys).union(totalByTask.keys) {
+            result[taskID] = TaskTotal(today: todayByTask[taskID] ?? 0, total: totalByTask[taskID] ?? 0)
+        }
+        return result
     }
 
     static func taskFactors(_ sessions: [FocusSessionValue]) -> [TaskFactor] {
@@ -138,7 +224,12 @@ func formatDuration(_ duration: TimeInterval, style: DurationStyle = .compact) -
     let remainingSeconds = seconds % 60
     switch style {
     case .timer:
-        return String(format: "%02d:%02d:%02d", hours, minutes, remainingSeconds)
+        // Subtle by default: m:ss, growing to h:mm:ss only past an hour —
+        // no leading zeroes standing in for time that hasn't happened yet.
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%d:%02d", minutes, remainingSeconds)
     case .compact:
         if hours > 0 { return "\(hours)h \(minutes)m" }
         if minutes > 0 { return "\(minutes)m" }

@@ -41,7 +41,7 @@ struct FlowmodoraApp: App {
             StatisticsView().environment(store)
                 .preferredColorScheme(preferredColorScheme)
         }
-        .defaultSize(width: 680, height: 540)
+        .defaultSize(width: 720, height: 780)
 
         Window("Settings", id: "settings") {
             SettingsView().environment(store)
@@ -61,7 +61,6 @@ struct FlowmodoraApp: App {
 
 struct MenuBarLabel: View {
     @Environment(AppStore.self) private var store
-    @State private var now = Date.now
 
     var body: some View {
         // Deliberately NOT a TimelineView here: using one as the root/label
@@ -69,31 +68,36 @@ struct MenuBarLabel: View {
         // indefinitely (confirmed via a stack sample — the process pegs one
         // CPU core forever inside NSStatusItem._adjustLength / NSISEngine
         // constraint solving and never returns). A plain, structurally
-        // stable HStack driven by a small polling Task avoids it.
-        HStack(spacing: 5) {
-            if store.timer.isActive { Image(systemName: store.timer.isBreakRunning ? "cup.and.saucer" : "circle.fill").imageScale(.small) }
-            Text(label(at: now)).monospacedDigit()
-        }
-        // Only polls while a timer is actually running — idle, the label is
-        // static text and there's nothing to tick, so this task exits and
-        // stops waking the process every second.
-        .task(id: store.timer.isActive) {
-            guard store.timer.isActive else { return }
-            while !Task.isCancelled {
-                now = .now
-                try? await Task.sleep(for: .seconds(1))
+        // stable HStack driven by TimerEngine's shared clock avoids it.
+        HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol).imageScale(.small) }
+            if let text = text(at: store.timer.now) {
+                Text(text).monospacedDigit().foregroundStyle(isPaused ? .secondary : .primary)
             }
         }
     }
 
-    private func label(at date: Date) -> String {
+    private var isPaused: Bool {
+        store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
+    }
+
+    // Idle shows an icon only and focus shows digits only — one signal at a
+    // time instead of stacking a state icon on every state.
+    private var symbol: String? {
         switch store.timer.phase {
+        case .idle: return "timer"
+        case .breakTimer, .pausedBreak, .suggestedBreak: return "cup.and.saucer"
+        case .focus, .pausedFocus: return nil
+        }
+    }
+
+    private func text(at date: Date) -> String? {
+        switch store.timer.phase {
+        case .idle, .suggestedBreak: return nil
         case .focus where store.timer.mode == .flowmodoro:
             return formatDuration(store.timer.focusDuration(at: date), style: .timer)
         case .focus, .pausedFocus, .breakTimer, .pausedBreak:
             return formatDuration(store.timer.countdownRemaining(at: date), style: .timer)
-        case .suggestedBreak: return "Break"
-        case .idle: return "Flowmodora"
         }
     }
 }

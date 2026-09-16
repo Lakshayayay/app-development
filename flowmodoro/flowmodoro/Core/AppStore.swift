@@ -1,6 +1,5 @@
 import AppKit
 import Foundation
-import Combine
 import SwiftData
 import Observation
 import SwiftUI
@@ -18,10 +17,20 @@ final class AppStore {
     private(set) var settings: AppSettingsRecord
     private(set) var tasks: [FocusTask] = []
     private(set) var sessions: [FocusSessionRecord] = []
+    /// Cached once per reload() instead of remapped on every render — see
+    /// StatisticsEngine. The task list and streak/heatmap all read from these.
+    private(set) var sessionValues: [FocusSessionValue] = []
+    private(set) var taskTitles: [UUID: String] = [:]
+    private(set) var dailyTotals: [Date: TimeInterval] = [:]
+    private(set) var taskTotals: [UUID: TaskTotal] = [:]
+    private(set) var streak: Streak = Streak(current: 0, best: 0)
+    var todayTotal: TimeInterval { dailyTotals[Calendar.current.startOfDay(for: .now)] ?? 0 }
     var alertMessage: String?
 
-    private var refreshTask: Task<Void, Never>?
+    private var contextMenu: StatusItemContextMenu?
+    private var outboxRetryTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
+    private var dayChangeObserver: NSObjectProtocol?
 
     init(modelContainer: ModelContainer) {
         modelContext = ModelContext(modelContainer)
@@ -43,6 +52,7 @@ final class AppStore {
         timer.store = self
         reload()
         syncEngine.refresh(pendingChanges: pendingOutboxCount())
+        contextMenu = StatusItemContextMenu(store: self)
         let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
             onStart: { [weak self] in
                 guard let self else { return }
@@ -56,7 +66,14 @@ final class AppStore {
             alertMessage = "Global shortcuts could not be registered."
         }
 
-        startTimerRefreshLoop()
+        // A beat after startup so LocalSyncEngine's auth state has had a
+        // chance to resolve (a restored session isn't known synchronously at
+        // init) — deciding "not configured" too early would wrongly purge a
+        // signed-in user's still-queued entries.
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.purgeOutboxIfSyncNotConfigured()
+        }
         // queue: .main guarantees this runs on the main thread; assumeIsolated
         // asserts that rather than paying for an async hop through Task.
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -64,41 +81,12 @@ final class AppStore {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.timer.refresh() }
         }
-    }
-
-    /// Single source of periodic phase-completion checks — replaces the two
-    /// duplicate 500ms UI poll loops that previously drove this. Runs regardless
-    /// of whether any view (popover, window) is currently visible, so a
-    /// completed Pomodoro interval or break is recognized even while the
-    /// menu-bar popover is closed.
-    private func startTimerRefreshLoop() {
-        refreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, let self else { return }
-                self.timer.refresh()
-                await self.attemptSyncOrCleanupOutbox()
-            }
-        }
-    }
-
-    private var hasCheckedStaleOutbox = false
-
-    /// Runs once per launch, a beat after startup so LocalSyncEngine's auth
-    /// state has had a chance to resolve (a restored session isn't known
-    /// synchronously at init) — deciding "not configured" too early would
-    /// wrongly purge a signed-in user's still-queued entries. Every other
-    /// tick just attempts a drain when there's something to send.
-    private func attemptSyncOrCleanupOutbox() async {
-        if syncEngine.status.isConfigured {
-            // syncEngine.status.pendingChanges is kept in lockstep with the
-            // outbox table by every mutation site (save(), attemptSync(),
-            // reload()) via refresh(pendingChanges:) — no need to re-fetch
-            // the count from SwiftData on every 1s tick just to check it's 0.
-            if syncEngine.status.pendingChanges > 0 { await attemptSync() }
-        } else if !hasCheckedStaleOutbox {
-            hasCheckedStaleOutbox = true
-            purgeOutboxIfSyncNotConfigured()
+        // "Today" and the streak are date-relative; without this they'd stay
+        // stale past midnight until the next unrelated write triggered reload().
+        dayChangeObserver = NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
         }
     }
 
@@ -144,7 +132,8 @@ final class AppStore {
                             pomodoroWorkDuration: settings.pomodoroWorkDuration,
                             pomodoroShortBreakDuration: settings.pomodoroShortBreakDuration,
                             pomodoroLongBreakDuration: settings.pomodoroLongBreakDuration,
-                            pomodoroCyclesBeforeLongBreak: settings.pomodoroCyclesBeforeLongBreak
+                            pomodoroCyclesBeforeLongBreak: settings.pomodoroCyclesBeforeLongBreak,
+                            dailyFocusGoal: settings.dailyFocusGoal
                         ),
                         updated_at: settings.updatedAt
                     ))
@@ -158,6 +147,22 @@ final class AppStore {
         }
         try? modelContext.save()
         syncEngine.refresh(pendingChanges: pendingOutboxCount())
+        scheduleOutboxRetry()
+    }
+
+    /// Retries a non-empty outbox on a backoff instead of polling every
+    /// second — each write already attempts a drain immediately via save(),
+    /// so this only covers the offline/transient-failure case, and idles
+    /// (no scheduled task at all) once the outbox is empty.
+    private func scheduleOutboxRetry(after seconds: Double = 30) {
+        outboxRetryTask?.cancel()
+        guard syncEngine.status.isConfigured, syncEngine.status.pendingChanges > 0 else { return }
+        outboxRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self else { return }
+            await self.attemptSync()
+            self.scheduleOutboxRetry(after: min(seconds * 2, 1800))
+        }
     }
 
     func reload() {
@@ -166,6 +171,11 @@ final class AppStore {
                 .filter { $0.deletedAt == nil }
             sessions = try modelContext.fetch(FetchDescriptor<FocusSessionRecord>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)]))
                 .filter { $0.deletedAt == nil }
+            sessionValues = sessions.map(FocusSessionValue.init)
+            taskTitles = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
+            dailyTotals = StatisticsEngine.dailyTotals(sessionValues)
+            taskTotals = StatisticsEngine.taskTotals(sessionValues)
+            streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
             syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
             alertMessage = "Unable to read local focus data."
@@ -192,9 +202,19 @@ final class AppStore {
     }
 
     func toggleTask(_ task: FocusTask) {
+        let completing = !task.isCompleted
+        // Completing the running task's own session first, so its focused
+        // time is actually recorded rather than discarded.
+        if completing, timer.snapshot.taskID == task.id, timer.phase == .focus || timer.phase == .pausedFocus {
+            timer.stop()
+        }
         task.isCompleted.toggle()
         task.completedAt = task.isCompleted ? .now : nil
         task.updatedAt = .now
+        if completing, settings.selectedTaskID == task.id {
+            settings.selectedTaskID = nil
+            settings.updatedAt = .now
+        }
         save(taskID: task.id, entityType: "task", operation: "upsert")
         reload()
     }
@@ -207,6 +227,9 @@ final class AppStore {
     func updateSettings() {
         settings.updatedAt = .now
         save(taskID: settings.selectedTaskID, entityType: "settings", operation: "upsert")
+        // Keeps the streak in sync the instant the daily goal changes,
+        // instead of waiting for the next unrelated write to call reload().
+        streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -252,11 +275,9 @@ final class AppStore {
         }
     }
 
-    var sessionValues: [FocusSessionValue] { sessions.map(FocusSessionValue.init) }
-
     func taskTitle(for id: UUID?) -> String {
-        guard let id, let task = tasks.first(where: { $0.id == id }) else { return "No task selected" }
-        return task.title
+        guard let id, let title = taskTitles[id] else { return "No task selected" }
+        return title
     }
 
     func pendingOutboxCount() -> Int {

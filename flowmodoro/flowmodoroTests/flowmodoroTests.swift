@@ -131,6 +131,128 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test func formatDurationTimerStyleStaysSubtle() {
+        // Menu bar / ring digits: m:ss under an hour, h:mm:ss past it — no
+        // leading zeroes standing in for time that hasn't happened yet.
+        #expect(formatDuration(59, style: .timer) == "0:59")
+        #expect(formatDuration(3_599, style: .timer) == "59:59")
+        #expect(formatDuration(3_600, style: .timer) == "1:00:00")
+        #expect(formatDuration(0, style: .timer) == "0:00")
+    }
+
+    @Test func taskTotalsSplitTodayFromLifetime() {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = Date(timeIntervalSince1970: 1_700_000_000)
+        let yesterday = today.addingTimeInterval(-86_400)
+        let taskA = UUID()
+        let values = [
+            makeSession(duration: 600, startedAt: today, taskID: taskA),
+            makeSession(duration: 300, startedAt: yesterday, taskID: taskA),
+            makeSession(duration: 120, startedAt: today, taskID: nil), // no task: excluded
+        ]
+
+        let totals = StatisticsEngine.taskTotals(values, calendar: calendar, now: today)
+        #expect(totals.count == 1)
+        #expect(totals[taskA]?.today == 600)
+        #expect(totals[taskA]?.total == 900)
+    }
+
+    @Test @MainActor func flowmodoroBreakStoresPlannedDurationForRingProgress() {
+        // Regression: startBreak() previously left snapshot.plannedDuration
+        // at whatever the prior focus interval set it to (nil, for
+        // Flowmodoro), so the break ring's progress fraction collapsed to
+        // remaining / remaining == 1 — always full for the whole break.
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 4_000)
+
+        engine.startFocus(taskID: UUID(), mode: .flowmodoro, now: start)
+        engine.stop(now: start.addingTimeInterval(300)) // 5m focus -> 1m suggested break (ratio 5)
+        #expect(engine.phase == .suggestedBreak)
+
+        engine.startSuggestedBreak(now: start.addingTimeInterval(300))
+        #expect(engine.phase == .breakTimer)
+        #expect(engine.snapshot.plannedDuration == 60)
+        #expect(engine.countdownRemaining(at: start.addingTimeInterval(300)) == 60)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test func streakCountsGoalDaysAndTodayInProgressDoesNotBreakIt() {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+        func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: today)! }
+        let goal: TimeInterval = 30 * 60
+        let dailyTotals: [Date: TimeInterval] = [
+            today: 10 * 60,     // in progress, under goal — must not break the streak
+            day(-1): 40 * 60,
+            day(-2): 35 * 60,
+            // day(-3) has no entry at all (no session that day) — breaks the run
+            day(-4): 60 * 60,
+            day(-5): 60 * 60,
+            day(-6): 60 * 60,
+        ]
+        let streak = StatisticsEngine.streak(dailyTotals, goal: goal, calendar: calendar, now: today)
+        #expect(streak.current == 2)
+        #expect(streak.best == 3)
+    }
+
+    @Test func zeroFilledDaysCoverRangeEndingToday() {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let start = calendar.date(byAdding: .day, value: -6, to: today)!
+        let days = StatisticsEngine.days(from: start, through: today, calendar: calendar)
+        #expect(days.count == 7)
+        #expect(days.last == today)
+
+        let filled = StatisticsEngine.zeroFilled([today: 600], days: days)
+        #expect(filled.count == 7)
+        #expect(filled.filter { $0.duration == 0 }.count == 6)
+        #expect(filled.last?.duration == 600)
+    }
+
+    @Test func cumulativeIsRunningSum() {
+        let day0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let daily = [
+            DailyFocus(date: day0, duration: 100),
+            DailyFocus(date: day0.addingTimeInterval(86_400), duration: 50),
+            DailyFocus(date: day0.addingTimeInterval(172_800), duration: 0),
+            DailyFocus(date: day0.addingTimeInterval(259_200), duration: 25),
+        ]
+        #expect(StatisticsEngine.cumulative(daily).map(\.duration) == [100, 150, 150, 175])
+    }
+
+    @Test func nextMilestoneReturnsSmallestUnreached() {
+        // Both sides must be unambiguously TimeInterval (Double) — comparing
+        // against a bare Int literal here silently fails inside #expect
+        // (mismatched operand types get boxed via AnyHashable for its
+        // diagnostics, and Double(36000.0) != Int(36000) once boxed).
+        #expect(StatisticsEngine.nextMilestone(total: 0) == 10.0 * 3_600)
+        #expect(StatisticsEngine.nextMilestone(total: 10.0 * 3_600) == 25.0 * 3_600)
+        #expect(StatisticsEngine.nextMilestone(total: 1_000.0 * 3_600) == nil)
+    }
+
+    @Test @MainActor func tickerRunsOnlyWhileRunning() {
+        // The shared clock (TimerEngine.now) must tick only while a timer is
+        // actually running — idle/paused/suggested-break must stay silent so
+        // the app is App Nap-eligible whenever nothing is counting.
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 5_000)
+
+        #expect(!engine.isTicking)
+        engine.startFocus(taskID: UUID(), mode: .flowmodoro, now: start)
+        #expect(engine.isTicking)
+        engine.pause(now: start.addingTimeInterval(10))
+        #expect(!engine.isTicking)
+        engine.resume(now: start.addingTimeInterval(20))
+        #expect(engine.isTicking)
+        engine.stop(now: start.addingTimeInterval(30))
+        #expect(!engine.isTicking)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {
         let record = FocusSessionRecord(taskID: taskID, mode: .flowmodoro, startedAt: startedAt, endedAt: startedAt.addingTimeInterval(duration), focusedDuration: duration, plannedDuration: nil, completed: !interrupted, interrupted: interrupted)
         return FocusSessionValue(record)

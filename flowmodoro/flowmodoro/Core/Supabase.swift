@@ -50,6 +50,7 @@ struct SupabaseSettingsPayload: Codable, Sendable {
     let pomodoroShortBreakDuration: Double
     let pomodoroLongBreakDuration: Double
     let pomodoroCyclesBeforeLongBreak: Int
+    let dailyFocusGoal: Double
 }
 
 struct SupabaseSettingsRow: Codable, Sendable {

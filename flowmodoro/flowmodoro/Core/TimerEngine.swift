@@ -1,6 +1,4 @@
 import Foundation
-import Combine
-
 import Observation
 
 enum FlowmodoroMath {
@@ -15,8 +13,13 @@ enum FlowmodoroMath {
 final class TimerEngine {
     var store: AppStore?
     private(set) var snapshot: TimerSnapshot
+    /// The clock driving every ticking display (menu-bar label, task row,
+    /// timer ring) — updated once a second only while a timer is actually
+    /// running. See `updateTicking()`.
+    private(set) var now = Date.now
 
     private let defaults: UserDefaults
+    private var tickTask: Task<Void, Never>?
 
     init(store: AppStore? = nil, defaults: UserDefaults = .standard) {
         self.store = store
@@ -27,6 +30,11 @@ final class TimerEngine {
         } else {
             snapshot = TimerSnapshot()
         }
+        // Covers a restored running snapshot (relaunch mid-session), which
+        // never goes through persist(). `store` is assigned synchronously
+        // right after this initializer returns, before this Task's first
+        // iteration can run.
+        updateTicking()
     }
 
     static let snapshotKey = "flowmodo.timer.snapshot"
@@ -36,6 +44,7 @@ final class TimerEngine {
     var isActive: Bool { [.focus, .pausedFocus, .breakTimer, .pausedBreak, .suggestedBreak].contains(phase) }
     var isFocusRunning: Bool { phase == .focus }
     var isBreakRunning: Bool { phase == .breakTimer || phase == .pausedBreak }
+    var isTicking: Bool { tickTask != nil }
 
     func refresh(at now: Date = .now) {
         if snapshot.phase == .focus, snapshot.mode == .pomodoro, let end = snapshot.countdownEnd, now >= end {
@@ -151,7 +160,6 @@ final class TimerEngine {
     func reset() {
         snapshot = TimerSnapshot(mode: store?.settings.selectedMode ?? .flowmodoro)
         persist()
-        store?.notificationService.cancelIntervalNotifications()
     }
 
     func focusDuration(at now: Date = .now) -> TimeInterval {
@@ -177,6 +185,12 @@ final class TimerEngine {
         snapshot.phase = .breakTimer
         snapshot.breakKind = kind
         snapshot.countdownEnd = now.addingTimeInterval(duration)
+        // Reuses plannedDuration (otherwise only meaningful during Pomodoro
+        // focus) as the break's total, so the ring can compute a progress
+        // fraction without re-deriving short/long/flow durations itself —
+        // it previously fell back to `remaining`, making the ring always
+        // read as full for the whole break.
+        snapshot.plannedDuration = duration
         snapshot.remainingWhenPaused = nil
         snapshot.suggestedBreak = nil
         persist()
@@ -240,5 +254,29 @@ final class TimerEngine {
     private func persist() {
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: Self.snapshotKey)
+        // Single point every transition passes through: no pending completion
+        // is left dangling on pause/stop/reset/completion, and a fresh
+        // schedule (above) always replaces rather than stacks on it.
+        if snapshot.countdownEnd == nil { store?.notificationService.cancelIntervalNotifications() }
+        updateTicking()
+    }
+
+    /// One shared 1 Hz clock while a timer is actually running — replaces
+    /// three separate per-second loops that used to live in AppStore,
+    /// MenuBarLabel, and TaskRow. Idles (no scheduled task) the instant
+    /// nothing is ticking, so the app stays App Nap-eligible.
+    private func updateTicking() {
+        let shouldTick = snapshot.phase == .focus || snapshot.phase == .breakTimer
+        guard shouldTick != (tickTask != nil) else { return }
+        tickTask?.cancel()
+        guard shouldTick else { tickTask = nil; return }
+        tickTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                self.now = .now
+                self.refresh(at: self.now)
+                try? await Task.sleep(for: .seconds(1), tolerance: .milliseconds(100))
+            }
+        }
     }
 }

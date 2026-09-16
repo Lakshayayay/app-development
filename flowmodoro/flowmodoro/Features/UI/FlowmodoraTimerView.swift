@@ -2,6 +2,8 @@ import SwiftUI
 
 struct FlowmodoraTimerView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var glassNamespace
 
     var body: some View {
         // No outer glass surface here: this view is only ever nested inside
@@ -16,200 +18,119 @@ struct FlowmodoraTimerView: View {
     }
 
     private var timerCircle: some View {
-        // .animation schedule ticks continuously while running so the ring moves
-        // smoothly from real timestamps, and pauses entirely (no wasted frames
-        // on a stacked-glass tree) whenever nothing is visually changing.
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isTicking)) { context in
-            ZStack {
-                Circle()
-                    .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
+        // Driven by TimerEngine.now — its shared 1 Hz clock, ticking only
+        // while a timer is actually running — instead of a TimelineView
+        // rebuilding this subtree on its own schedule (previously ticked
+        // even while idle/paused). The ring still animates the gap between
+        // ticks itself, so 1 Hz reads as continuous.
+        let now = store.timer.now
+        return ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
 
-                if isCountingUp {
-                    // Flowmodoro counts up with no fixed end, so a full/empty
-                    // fraction can't represent it. A short arc sweeping
-                    // continuously reads as "still active" instead of looking
-                    // like a completed countdown.
-                    Circle()
-                        .trim(from: 0, to: 0.16)
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                        .rotationEffect(.degrees(sweepAngle(at: context.date)))
-                } else {
-                    Circle()
-                        .trim(from: 0, to: progress(at: context.date))
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                }
+            Circle()
+                .trim(from: 0, to: progress(at: now))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .opacity(isPaused ? 0.5 : 1)
+                .animation(reduceMotion ? nil : .linear(duration: 1), value: progress(at: now))
 
-                VStack(spacing: 8) {
-                    Text(displayValue(at: context.date))
-                        .font(.system(size: 48, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.primary)
-                        .contentTransition(.numericText())
+            VStack(spacing: 8) {
+                Text(displayValue(at: now))
+                    .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .contentTransition(.numericText())
+                    // Keyed on phase, not on the ticking value itself, so
+                    // this only rolls on a real discontinuity (start,
+                    // stop, skip) — a normal per-second tick hard-swaps,
+                    // the way a real clock does.
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: store.timer.phase)
 
-                    Text(subtitle)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
+                Text(subtitle)
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
             }
         }
         .frame(width: 250, height: 250)
     }
 
+    private struct ControlButton: Identifiable {
+        let id: String
+        let symbol: String
+        var isDisabled = false
+        let action: () -> Void
+    }
+
     @ViewBuilder private var controls: some View {
-        Group {
-            switch store.timer.phase {
-            case .idle:
-                VStack(spacing: 8) {
-                    if store.settings.selectedTaskID == nil {
-                        Text("Select a task to begin")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button {
-                        store.timer.startFocus(taskID: store.settings.selectedTaskID, mode: store.settings.selectedMode)
-                    } label: {
-                        Image(systemName: "play.fill")
-                            .font(.title2)
-                            .frame(width: 60, height: 60)
-                    }
-                    .springButtonStyle()
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .disabled(store.settings.selectedTaskID == nil)
-                }
-
-            case .focus:
-                GlassEffectContainer(spacing: 20) {
-                    HStack(spacing: 20) {
-                        if store.settings.showPauseButton {
-                            Button { store.timer.pause() } label: {
-                                Image(systemName: "pause.fill")
-                                    .font(.title2)
-                                    .frame(width: 50, height: 50)
-                            }
-                            .springButtonStyle()
-                            .glassEffect(.regular.interactive(), in: .circle)
-                        }
-
-                        Button { store.timer.stop() } label: {
-                            Image(systemName: "stop.fill")
+        VStack(spacing: 8) {
+            if store.timer.phase == .idle, store.settings.selectedTaskID == nil {
+                Text("Select a task to begin")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            GlassEffectContainer(spacing: 20) {
+                HStack(spacing: 20) {
+                    ForEach(activeButtons) { button in
+                        Button(action: button.action) {
+                            Image(systemName: button.symbol)
                                 .font(.title2)
-                                .frame(width: 50, height: 50)
+                                .frame(width: 52, height: 52)
                         }
                         .springButtonStyle()
                         .glassEffect(.regular.interactive(), in: .circle)
-
-                        if store.timer.mode == .pomodoro {
-                            Button { store.timer.skip() } label: {
-                                Image(systemName: "forward.fill")
-                                    .font(.title2)
-                                    .frame(width: 50, height: 50)
-                            }
-                            .springButtonStyle()
-                            .glassEffect(.regular.interactive(), in: .circle)
-                        }
-                    }
-                }
-
-            case .pausedFocus:
-                GlassEffectContainer(spacing: 20) {
-                    HStack(spacing: 20) {
-                        Button { store.timer.resume() } label: {
-                            Image(systemName: "play.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-
-                        Button { store.timer.stop() } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-                    }
-                }
-
-            case .breakTimer:
-                GlassEffectContainer(spacing: 20) {
-                    HStack(spacing: 20) {
-                        Button { store.timer.pause() } label: {
-                            Image(systemName: "pause.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-
-                        Button { store.timer.skip() } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-                    }
-                }
-
-            case .pausedBreak:
-                GlassEffectContainer(spacing: 20) {
-                    HStack(spacing: 20) {
-                        Button { store.timer.resume() } label: {
-                            Image(systemName: "play.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-
-                        Button { store.timer.skip() } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-                    }
-                }
-
-            case .suggestedBreak:
-                GlassEffectContainer(spacing: 20) {
-                    HStack(spacing: 20) {
-                        Button { store.timer.startSuggestedBreak() } label: {
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.title2)
-                                .frame(width: 60, height: 60)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
-
-                        Button { store.timer.reset() } label: {
-                            Image(systemName: "xmark")
-                                .font(.title2)
-                                .frame(width: 50, height: 50)
-                        }
-                        .springButtonStyle()
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .glassEffectID(button.id, in: glassNamespace)
+                        .disabled(button.isDisabled)
                     }
                 }
             }
         }
-        .transition(.opacity)
-        .animation(.easeOut(duration: 0.18), value: store.timer.phase)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.35), value: store.timer.phase)
     }
 
-    private var isTicking: Bool {
-        store.timer.phase == .focus || store.timer.phase == .breakTimer
+    /// One stable identity per role (primary/stop/skip/dismiss) across every
+    /// phase, so GlassEffectContainer morphs a button into its next state
+    /// instead of cross-fading a removed view and a new one.
+    private var activeButtons: [ControlButton] {
+        switch store.timer.phase {
+        case .idle:
+            return [ControlButton(id: "primary", symbol: "play.fill", isDisabled: store.settings.selectedTaskID == nil) {
+                store.timer.startFocus(taskID: store.settings.selectedTaskID, mode: store.settings.selectedMode)
+            }]
+        case .focus:
+            var buttons: [ControlButton] = []
+            if store.settings.showPauseButton {
+                buttons.append(ControlButton(id: "primary", symbol: "pause.fill") { store.timer.pause() })
+            }
+            buttons.append(ControlButton(id: "stop", symbol: "stop.fill") { store.timer.stop() })
+            if store.timer.mode == .pomodoro {
+                buttons.append(ControlButton(id: "skip", symbol: "forward.fill") { store.timer.skip() })
+            }
+            return buttons
+        case .pausedFocus:
+            return [
+                ControlButton(id: "primary", symbol: "play.fill") { store.timer.resume() },
+                ControlButton(id: "stop", symbol: "stop.fill") { store.timer.stop() },
+            ]
+        case .breakTimer:
+            return [
+                ControlButton(id: "primary", symbol: "pause.fill") { store.timer.pause() },
+                ControlButton(id: "skip", symbol: "forward.fill") { store.timer.skip() },
+            ]
+        case .pausedBreak:
+            return [
+                ControlButton(id: "primary", symbol: "play.fill") { store.timer.resume() },
+                ControlButton(id: "skip", symbol: "forward.fill") { store.timer.skip() },
+            ]
+        case .suggestedBreak:
+            return [
+                ControlButton(id: "primary", symbol: "cup.and.saucer.fill") { store.timer.startSuggestedBreak() },
+                ControlButton(id: "skip", symbol: "xmark") { store.timer.reset() },
+            ]
+        }
     }
 
-    private var isCountingUp: Bool {
-        store.timer.phase == .focus && store.timer.mode == .flowmodoro
-    }
-
-    private func sweepAngle(at date: Date) -> Double {
-        // One full sweep every 2 seconds — a continuous "still going" cue.
-        (date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2) / 2) * 360
+    private var isPaused: Bool {
+        store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
     }
 
     private func progress(at date: Date) -> Double {
@@ -218,7 +139,10 @@ struct FlowmodoraTimerView: View {
             return 0
         case .focus, .pausedFocus:
             if store.timer.mode == .flowmodoro {
-                return 0 // rendered via the rotating sweep in timerCircle instead
+                // No fixed end to show a fraction of, so the ring reads like
+                // a minute hand instead: one full lap per hour of focus.
+                let elapsed = store.timer.focusDuration(at: date)
+                return elapsed.truncatingRemainder(dividingBy: 3600) / 3600
             } else {
                 let remaining = store.timer.countdownRemaining(at: date)
                 let total = store.timer.snapshot.plannedDuration ?? 25 * 60
@@ -226,9 +150,7 @@ struct FlowmodoraTimerView: View {
             }
         case .breakTimer, .pausedBreak:
             let remaining = store.timer.countdownRemaining(at: date)
-            let total = store.timer.snapshot.breakKind == .long
-                ? (store.settings.pomodoroLongBreakDuration )
-                : (store.timer.mode == .flowmodoro ? (store.timer.snapshot.suggestedBreak ?? remaining) : store.settings.pomodoroShortBreakDuration )
+            let total = store.timer.snapshot.plannedDuration ?? remaining
             return total > 0 ? remaining / total : 0
         }
     }
@@ -242,13 +164,14 @@ struct FlowmodoraTimerView: View {
         case .suggestedBreak:
             return formatDuration(store.timer.snapshot.suggestedBreak ?? 0, style: .timer)
         case .idle:
-            return "00:00"
+            let upcoming = store.timer.mode == .flowmodoro ? 0 : store.settings.pomodoroWorkDuration
+            return formatDuration(upcoming, style: .timer)
         }
     }
 
     private var subtitle: String {
         switch store.timer.phase {
-        case .focus, .pausedFocus: return store.taskTitle(for: store.timer.snapshot.taskID)
+        case .focus, .pausedFocus: return ""
         case .breakTimer, .pausedBreak: return store.timer.snapshot.breakKind == .long ? "Long break" : "Break"
         case .suggestedBreak: return "Suggested break"
         case .idle: return "Ready"

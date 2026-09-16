@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import Carbon.HIToolbox
 import Foundation
 import ServiceManagement
@@ -16,6 +15,12 @@ final class NotificationService {
         }
     }
 
+    /// Fixed identifier (not a fresh UUID per call): scheduling with it replaces
+    /// any still-pending completion notification, and cancelling is a plain
+    /// synchronous removal instead of an async fetch-then-remove that could
+    /// race with a new add — see ARCHITECTURE_DECISIONS.md.
+    private static let intervalIdentifier = "flowmodo.interval"
+
     func scheduleIntervalCompletion(at date: Date, title: String, body: String, sound: Bool) {
         let interval = max(1, date.timeIntervalSinceNow)
         let content = UNMutableNotificationContent()
@@ -23,7 +28,7 @@ final class NotificationService {
         content.body = body
         if sound { content.sound = .default }
         let request = UNNotificationRequest(
-            identifier: "flowmodo.interval.\(UUID().uuidString)",
+            identifier: Self.intervalIdentifier,
             content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         )
@@ -31,11 +36,7 @@ final class NotificationService {
     }
 
     func cancelIntervalNotifications() {
-        let center = self.center
-        center.getPendingNotificationRequests { requests in
-            let ids = requests.map(\.identifier).filter { $0.hasPrefix("flowmodo.interval.") }
-            center.removePendingNotificationRequests(withIdentifiers: ids)
-        }
+        center.removePendingNotificationRequests(withIdentifiers: [Self.intervalIdentifier])
     }
 }
 
@@ -61,7 +62,6 @@ final class LoginItemService {
 /// it cannot register a shortcut. The service intentionally keeps the platform bridge isolated.
 @MainActor
 final class GlobalHotkeyService {
-    private var registered = false
     private var hotkeys: [EventHotKeyRef] = []
     private var handlerRef: EventHandlerRef?
     private var actions: [UInt32: () -> Void] = [:]
@@ -107,7 +107,6 @@ final class GlobalHotkeyService {
             }
             hotkeys.append(ref)
         }
-        registered = true
         return true
     }
 
@@ -117,10 +116,7 @@ final class GlobalHotkeyService {
         if let handlerRef { RemoveEventHandler(handlerRef) }
         self.handlerRef = nil
         actions.removeAll()
-        registered = false
     }
-
-    var isRegistered: Bool { registered }
 }
 
 enum AppError: LocalizedError {
