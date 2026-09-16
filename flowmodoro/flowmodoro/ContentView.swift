@@ -70,9 +70,13 @@ struct FlowmodoraPopover: View {
             HStack {
                 Text("TASKS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Button { showingNewTask = true } label: { Image(systemName: "plus") }
-                    .buttonStyle(.plain)
-                    .help("New task")
+                Button { showingNewTask = true } label: {
+                    Image(systemName: "plus")
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .springButtonStyle()
+                .help("New task")
             }
             let activeTasks = store.tasks.filter { !$0.isCompleted }
             let completedTasks = store.tasks.filter(\.isCompleted)
@@ -120,7 +124,7 @@ struct FlowmodoraPopover: View {
                 }
                 .font(.subheadline).foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .springButtonStyle()
             Spacer()
             Menu {
                 Button("History") { open("history") }
@@ -162,29 +166,35 @@ struct TaskRow: View {
             Button { store.toggleTask(task) } label: {
                 Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(task.isCompleted ? Color.accentColor : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .springButtonStyle()
+            .accessibilityLabel(task.isCompleted ? "Mark \(task.title) incomplete" : "Complete \(task.title)")
 
-            Text(task.title)
-                .font(.subheadline)
-                .strikethrough(task.isCompleted)
-                .foregroundStyle(task.isCompleted ? .secondary : .primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            Text(timeLabel)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Button { store.selectTask(task) } label: {
+                HStack(spacing: 8) {
+                    Text(task.title)
+                        .font(.subheadline)
+                        .strikethrough(task.isCompleted)
+                        .foregroundStyle(task.isCompleted ? .secondary : .primary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(timeLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .springButtonStyle()
+            // Same rule the old tap-gesture guard enforced.
+            .disabled(task.isCompleted || (store.timer.isActive && !isSelected))
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 2) // was 5: the 22 pt checkbox target keeps the row height the same
         .padding(.horizontal, 6)
         .background(isSelected ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard !task.isCompleted, isSelected || !store.timer.isActive else { return }
-            store.selectTask(task)
-        }
+        .animation(.snappy(duration: 0.2), value: isSelected)
     }
 
     private var timeLabel: String {

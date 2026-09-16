@@ -164,7 +164,7 @@ struct FlowmodoraTimerView: View {
                 }
             }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.35), value: store.timer.phase)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .snappy(duration: 0.25), value: store.timer.phase)
     }
 
     /// One stable identity per role (primary/stop/skip/dismiss) across every
