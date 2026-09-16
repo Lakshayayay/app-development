@@ -34,7 +34,7 @@ struct PomodoroConfigFields: View {
     }
 }
 
-/// A Focused-style pre-start step: a one-line summary of the plan that expands
+/// B Focused-style pre-start step: a one-line summary of the plan that expands
 /// to edit it. Shown only while idle in Pomodoro mode, so the running flow is
 /// unchanged. A plain tile rather than glass: the popover is already the one
 /// glass pane (see FlowmodoraTimerView).
