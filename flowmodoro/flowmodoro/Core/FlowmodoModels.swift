@@ -233,6 +233,10 @@ struct TimerSnapshot: Codable, Sendable {
 /// The Pomodoro configuration committed when Start is pressed. Frozen into
 /// TimerSnapshot so editing Settings mid-run can't change a cycle already in
 /// progress, and a relaunch resumes the same plan.
+// New fields here must be Optional too — see TimerSnapshot's decoding-safety
+// comment above `pomodoroPlan`; PomodoroPlan is embedded inside it, so a
+// non-optional addition would throw decoding every snapshot persisted today
+// and TimerEngine.init's `try?` would silently discard a running timer.
 struct PomodoroPlan: Codable, Sendable, Equatable {
     var work: TimeInterval = 25 * 60
     var shortBreak: TimeInterval = 5 * 60

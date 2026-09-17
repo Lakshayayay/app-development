@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-extension LinearGradient {
+private extension LinearGradient {
     /// The accent, lifted toward white at the top: more "pop" than a flat
     /// fill while staying the app's single accent hue in light and dark.
     static var barFill: LinearGradient {
@@ -307,7 +307,7 @@ private struct ProgressSection: View {
                 ))
                 .onAppear {
                     // Bars rise from the baseline once per window open.
-                    withAnimation(reduceMotion ? nil : .spring(duration: 0.5, bounce: 0.2)) { hasAppeared = true }
+                    withAnimation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2)) { hasAppeared = true }
                 }
             }
         }
@@ -356,7 +356,7 @@ private struct MilestoneSection: View {
                         PointMark(x: .value("Date", last.date), y: .value("Hours", last.duration / 3600))
                             .symbolSize(80)
                             .foregroundStyle(Color.accentColor)
-                            .annotation(position: .top, alignment: .trailing) {
+                            .annotation(position: .top, alignment: .trailing, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                                 ChartCallout(title: formatDuration(last.duration), detail: "so far")
                             }
                     }
@@ -392,7 +392,7 @@ private struct TaskBreakdownSection: View {
                     BarMark(x: .value("Minutes", bar.duration / 60), y: .value("Task", bar.name))
                         .foregroundStyle(Color.accentColor.gradient)
                         .cornerRadius(6)
-                        .annotation(position: .trailing) {
+                        .annotation(position: .trailing, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
                             Text(formatDuration(bar.duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         }
                 }

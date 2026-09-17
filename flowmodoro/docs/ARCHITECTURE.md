@@ -131,10 +131,11 @@ builds the matching row from the in-memory `tasks`/`sessions`/`settings`
 already loaded, upserts it, and deletes the outbox entry only on success. A
 row that fails (offline, transient error) stays queued — every subsequent
 `save()` (coalesced through `AppStore.requestSync()`, which debounces a
-burst of rapid writes into one sync pass and never overlaps an in-flight
-one), plus a backoff retry (`AppStore.scheduleOutboxRetry`, 30s doubling to
-30min while anything is pending), drains it. Upserting by the
-client-generated UUID makes retries idempotent.
+burst of rapid writes into one sync pass), plus a backoff retry
+(`AppStore.scheduleOutboxRetry`, 30s doubling to 30min while anything is
+pending, which calls `attemptSync()` directly and can in principle overlap a
+coalesced drain), drains it. Upserting by the client-generated UUID makes
+retries idempotent, so an overlap is harmless.
 
 - Focus sessions are append-oriented and idempotent by `id`.
 - Mutable tasks use last-write-wins by `updated_at` (re-upserting the full
@@ -343,13 +344,19 @@ Append a new entry here whenever a non-obvious technical call is made.
 - Reason: reading Settings live let a mid-run edit change a cycle already
   running. Worse, after sleep the tick loop chained break → backdated focus
   → completion and recorded focus that never happened.
+- Addendum: this also covers pressing Start from `.suggestedBreak` (skipping
+  a suggested break when `autoStartBreak` is off) — that's a manual Start
+  like any other, so the snapshot resets and `roundsCompleted` restarts at 0,
+  consistent with "manual Start = fresh run" above.
 
 ### Coalesced outbox drains
 - Decision: `AppStore.requestSync()` cancels any in-flight debounce chain,
   awaits the previous chain's completion, waits 400ms, then drains once —
-  so a burst of rapid saves (e.g. holding a settings stepper) triggers one
-  sync pass, never overlapping calls that could each re-upload the same
-  queued rows.
+  so a burst of rapid saves (e.g. holding a settings stepper) coalesces into
+  one sync pass instead of each save spawning its own. `scheduleOutboxRetry`'s
+  backoff retry still calls `attemptSync()` directly and can in principle
+  overlap a coalesced drain, which is safe because `attemptSync` is
+  idempotent (upsert-by-id, delete-on-success).
 - Reason: every `save()` previously spawned its own independent
   `attemptSync()` task.
 

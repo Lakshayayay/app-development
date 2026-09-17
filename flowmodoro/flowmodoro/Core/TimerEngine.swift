@@ -60,7 +60,7 @@ final class TimerEngine {
     /// interval then would record focus that never happened.
     static let autoContinueGrace: TimeInterval = 120
 
-    func startFocus(taskID: UUID?, mode: FocusMode, plan: PomodoroPlan? = nil, now: Date = .now) {
+    func startFocus(taskID: UUID?, mode: FocusMode, plan: PomodoroPlan? = nil, now: Date = .now, isAutoContinue: Bool = false) {
         guard let taskID else { return }
         if snapshot.phase == .suggestedBreak { snapshot = TimerSnapshot() }
         guard snapshot.phase == .idle else { return }
@@ -77,13 +77,14 @@ final class TimerEngine {
             snapshot.pomodoroPlan = committed
             snapshot.plannedDuration = committed.work
             snapshot.countdownEnd = now.addingTimeInterval(committed.work)
-            // A fresh manual Start always begins at round zero. An idle
-            // snapshot can carry a stale count left behind by a break that
-            // ended without auto-continuing (autoStartFocus off, or the
-            // sleep grace exceeded) — see completeBreak, which restores the
-            // count itself right after this call when it's the one auto-
-            // continuing a round rather than the user starting fresh.
-            snapshot.roundsCompleted = nil
+            // A fresh manual Start always begins at round zero. completeBreak
+            // passes isAutoContinue: true for its auto-continue call, so this
+            // is skipped there and roundsCompleted — already carried on
+            // `snapshot` — survives persist() below intact instead of being
+            // written as nil and only fixed up in memory afterwards.
+            if !isAutoContinue {
+                snapshot.roundsCompleted = nil
+            }
         } else {
             snapshot.plannedDuration = nil
             snapshot.pomodoroCycle = 0
@@ -263,14 +264,11 @@ final class TimerEngine {
             ? TimerSnapshot(mode: mode, taskID: taskID)
             : TimerSnapshot(mode: mode, taskID: taskID, pomodoroCycle: snapshot.pomodoroCycle, roundsCompleted: snapshot.roundsCompleted)
         persist()
-        // Starts at `now`, never backdated to `end`.
+        // Starts at `now`, never backdated to `end`. isAutoContinue tells
+        // startFocus to leave roundsCompleted — already carried on
+        // `snapshot` above — untouched instead of clearing it before persist.
         if shouldStartFocus {
-            // startFocus always clears roundsCompleted, assuming a fresh
-            // manual start; restore the count this auto-continued round
-            // actually carries.
-            let preservedRounds = snapshot.roundsCompleted
-            startFocus(taskID: taskID, mode: mode, plan: plan, now: now)
-            snapshot.roundsCompleted = preservedRounds
+            startFocus(taskID: taskID, mode: mode, plan: plan, now: now, isAutoContinue: true)
         }
     }
 

@@ -153,6 +153,7 @@ struct FlowmodoraPopover: View {
 /// running task's live elapsed time on top of AppStore's cached totals).
 struct TaskRow: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: FocusTask
 
     private var isSelected: Bool { store.settings.selectedTaskID == task.id }
@@ -194,7 +195,7 @@ struct TaskRow: View {
         .padding(.vertical, 2) // was 5: the 22 pt checkbox target keeps the row height the same
         .padding(.horizontal, 6)
         .background(isSelected ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-        .animation(.snappy(duration: 0.2), value: isSelected)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isSelected)
     }
 
     private var timeLabel: String {

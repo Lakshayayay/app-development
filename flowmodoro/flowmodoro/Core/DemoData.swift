@@ -16,6 +16,12 @@ enum DemoData {
         let context = ModelContext(container)
         let tasks = ["Thesis", "Reading", "Code review", "Email", "Design"].map { FocusTask(title: $0) }
         tasks.forEach(context.insert)
+        // AppStore only creates a settings row lazily when none exists yet;
+        // seed one here with a task selected, otherwise the demo launches
+        // idle with nothing for ⌘⌥S to start, blocking manual perf runs.
+        let settings = AppSettingsRecord()
+        settings.selectedTaskID = tasks[0].id
+        context.insert(settings)
         let today = Calendar.current.startOfDay(for: .now)
         // Deterministic, so before/after benchmarks run on identical data.
         for dayOffset in 0..<1_095 {

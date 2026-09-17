@@ -298,6 +298,30 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test @MainActor func autoContinuePersistsRoundsCompleted() throws {
+        // Regression: startFocus used to unconditionally clear
+        // roundsCompleted and persist() before completeBreak's in-memory
+        // restore ran, so a crash/relaunch during round 2+ of an
+        // auto-continued run read back roundsCompleted == nil. Assert the
+        // *persisted* snapshot (not just the live engine) carries the count.
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        let start = Date(timeIntervalSince1970: 7_500)
+        let plan = PomodoroPlan(work: 60, shortBreak: 60, longBreak: 60, rounds: 3, autoStartBreak: true, autoStartFocus: true)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start)
+        engine.refresh(at: start.addingTimeInterval(60))   // round 1 done → break
+        engine.refresh(at: start.addingTimeInterval(120))  // break ends on time → round 2 auto-continues
+        #expect(engine.phase == .focus)
+        #expect(engine.snapshot.roundsCompleted == 1)
+
+        let data = try #require(defaults.data(forKey: TimerEngine.snapshotKey))
+        let persisted = try JSONDecoder().decode(TimerSnapshot.self, from: data)
+        #expect(persisted.roundsCompleted == 1)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     @Test @MainActor func lateBreakEndDoesNotAutoStartFocus() {
         // Regression: after sleeping through a break with auto-continue on, the
         // tick loop chained break → backdated focus → completed focus → …,

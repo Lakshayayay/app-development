@@ -145,6 +145,8 @@ final class AppStore {
                     break
                 }
                 modelContext.delete(entry)
+            } catch is CancellationError {
+                break // requestSync() cancelled us; stop draining rather than issuing doomed requests
             } catch {
                 continue // leave queued; retried on the next tick or save()
             }
