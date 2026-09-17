@@ -8,9 +8,9 @@ or a scratch working-notes ledger to figure out where things stand.
 ## What Flowmodora is
 
 A native macOS menu-bar focus timer (Flowmodoro + Pomodoro), local-first,
-with optional Supabase sync. See `flowmodoro/README.md` for build
-instructions and `flowmodoro/docs/ARCHITECTURE.md` for how each subsystem
-works and why specific technical calls were made.
+with optional Supabase sync. See the repo root's `README.md` for build
+instructions and `ARCHITECTURE.md` (this same folder) for how each
+subsystem works and why specific technical calls were made.
 
 ## Product principles (non-negotiable)
 
@@ -50,9 +50,9 @@ scores.
 
 A personal streak and daily-goal ring are in scope, narrowly: a day counts
 once its focused time meets a user-set daily goal (default 30 min); the
-Statistics window shows the current/best streak, a heatmap, and
-total-hours milestones — all derived facts from recorded sessions, like
-everything else in Statistics. No points, XP, badges, levels, or
+Statistics window shows the current/best streak and a heatmap — all
+derived facts from recorded sessions, like everything else in Statistics.
+No points, XP, badges, levels, or
 social/competitive framing. If this ever grows toward those, that's a new
 product decision, not a natural extension of this one.
 
@@ -103,8 +103,8 @@ If the answer isn't obviously yes, simplify.
 - History and Today/Week/Month/Year/Total statistics: a daily goal, a
   current/best streak, a today-vs-goal ring, a 52-week heatmap, accent-
   gradient period bar charts with a goal line and rising-bar entrance,
-  a cumulative-hours area chart with milestones, and a by-task breakdown —
-  all derived facts from recorded sessions, no points/badges/levels.
+  and a by-task breakdown — all derived facts from recorded sessions, no
+  points/badges/levels.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
 - Real Supabase sync: SDK integrated, schema + RLS applied, email OTP auth,
   offline-safe outbox transport, and (as of this branch) an actual network-
@@ -112,7 +112,7 @@ If the answer isn't obviously yes, simplify.
 - App identity: name, icon, accent color, cleaned `Info.plist`.
 - Notifications, launch-at-login, light/dark/system appearance.
 - Sleep/wake, settings, streak, ticker-lifecycle, and Pomodoro-plan/rounds
-  test coverage in `flowmodoroTests` (21 tests as of this branch).
+  test coverage in `flowmodoroTests`.
 
 ## Not built yet
 
@@ -129,85 +129,32 @@ If the answer isn't obviously yes, simplify.
   repeatedly: a status-item click is scriptable via AppleScript/System
   Events, but the popover it opens exposes no AX window to click inside).
 
-## In progress: feature/pomodoro-config-stats-perf-security
+## Outstanding work
 
-Branch for: Pomodoro pre-start configuration (B Focused-style), a
-"poppier" Statistics restyle, performance/smoothness work, and a security
-pass. Full task-by-task plan and exact code:
-`docs/superpowers/plans/2026-09-16-pomodoro-config-stats-perf-security.md`.
+The Pomodoro-config/stats-restyle/performance/security pass (Pomodoro
+pre-start configuration, "poppier" Statistics, ring/click-path performance,
+and a security pass) is done and merged to `master` as ordinary commits —
+see git log for the task-by-task history. Two items from that work still
+need a human, not more code:
 
-**Done (10 of 12 tasks, all reviewed clean and merged to this branch):**
-- [x] Task 0.1 — `-demoData` Debug launch flag + baseline perf numbers (S1
-      only; S2–S4 need a manual click-through, see
-      `flowmodoro/docs/ARCHITECTURE.md`'s Performance section)
-- [x] Task 1.1 — Pomodoro plan frozen at Start, round limit, fixed a real
-      bug where sleeping through a break could fabricate recorded sessions
-- [x] Task 1.2 — the B Focused-style pre-start configuration card
-- [x] Task 2.1 — Statistics performance (derive once, O(1) hover)
-- [x] Task 2.2 — Statistics restyle (gradient charts, dropped the
-      Longest/Average tiles)
-- [x] Task 3.1 — isolated the ticking ring from the control buttons, fixed
-      an hourly backwards-sweep animation bug
-- [x] Task 3.2 — press feedback on every popover button, faster control
-      morph animation
-- [x] Task 4.1 — security migration **written**
-      (`flowmodoro/Supabase/003_close_public_exposure.sql`, closes an
-      anon-readable data leak) — **still not applied to the live Supabase
-      project**: the owner gave the go-ahead (2026-09-17), but the
-      supabase-project MCP connection used to apply it is read-only
-      (`transaction_read_only = on`), so it needs either a Dashboard SQL
-      editor run or a read-write MCP connection
-- [x] Task 4.2 — network-client sandbox entitlement (sync was previously
-      silently blocked), dropped an unused file-access entitlement,
-      hardened runtime — verified against the actual signed binary
-- [x] Task 4.3 — sign-in field sanitization + AutoFill hints
-- [x] Task 3.3 — coalesce sync bursts (`AppStore.requestSync()`) — task
-      review dispatched 2026-09-17: ✅ spec compliant, 21/21 tests pass,
-      no Critical/Important findings, approved
+- **S2–S4 perf click-through.** S1 (idle, closed) was re-measured at 0.1%
+  CPU / 0.0 wakeups, unchanged from before. S2–S4 (timer running, popover
+  open) still need a manual click-through with `top -l 61 -s 1 -stats
+  pid,cpu,idlew -pid $PID` — no scriptable path exists yet: a status-item
+  click is AppleScript/System-Events-reachable, but the popover it opens
+  exposes no AX window to drive from a script.
+- **Security migration `003_close_public_exposure.sql` not yet applied to
+  the live Supabase project.** The file is written and reviewed; the owner
+  approved applying it (2026-09-17), but the available Supabase MCP
+  connection is read-only (`transaction_read_only = on`). Needs a Dashboard
+  SQL editor run or a read-write connection.
 
-**Remaining (1 of 12 tasks + final review):**
-- [ ] Task 3.4 — after-benchmarks: S1 (idle, closed) re-measured
-      2026-09-17 at 0.1% CPU / 0.0 wakeups, unchanged from Before. S2–S4
-      still need a manual click-through — confirmed again this pass that
-      System Events can click the status item but the popover it opens
-      exposes no AX window (`windows` returns 0), and `DemoData` doesn't
-      pre-select a task, so even the ⌘⌥S hotkey has nothing to start.
-      Acceptance criteria needing S2–S4 (10× fewer S4 body updates, S2/S3
-      CPU no higher than before) are unverified until someone runs that
-      click-through by hand.
-- [ ] Task 4.1's live-DB apply (blocked on MCP read-only connection, see
-      above)
-- [ ] Final whole-branch review, then `finishing-a-development-branch`
-      (decide PR vs. direct merge)
-
-**Standing decisions made while executing this plan** (carried forward so
-resuming doesn't need to re-derive them):
-- Worked directly on this feature branch, not a separate git worktree —
-  single-session, single-writer, no concurrency risk.
-- Task 4.1's live-database apply is deliberately held back — implementing
-  the migration file is in scope for automated execution, applying it to
-  the real Supabase project is not, without one more explicit
-  confirmation. The RLS cross-user isolation test is likewise still
-  outstanding for the same reason.
-- Task 1.1's `roundsCompleted` leak (found in review) was fixed inline
-  within Task 1.1 rather than deferred, since Task 1.2 — the very next
-  task — was about to make it immediately reachable through the UI.
-
-**Deferred, non-blocking observations from review** (safe to leave for the
-final whole-branch review to triage):
-- `REGISTER_APP_GROUPS = YES` is dead build config on the app target — no
-  app-group ID configured anywhere, no widget/extension target exists yet.
-  Same category of unused-capability cruft Task 4.2 already cleaned up,
-  just outside that task's diff.
-- Task 4.3's implementer report asserted its test result in prose without
-  pasting the raw command/output — the underlying claim was independently
-  reconfirmed true, this is a documentation-quality nit only.
+Known non-blocking cruft: `REGISTER_APP_GROUPS = YES` is dead build config
+on the app target — no app-group ID configured anywhere, no widget
+extension target exists yet.
 
 ## Where the deeper detail lives
 
-- `flowmodoro/docs/ARCHITECTURE.md` — how every subsystem works, why
-  specific technical calls were made (append a new decision entry there
-  whenever you make a non-obvious one), current performance baseline.
-- `docs/superpowers/plans/2026-09-16-pomodoro-config-stats-perf-security.md`
-  — the exact task-by-task plan (code included) for finishing the in-
-  progress branch above.
+`ARCHITECTURE.md` (this same folder) — how every subsystem works, why
+specific technical calls were made (append a new decision entry there
+whenever you make a non-obvious one), current performance baseline.

@@ -3,8 +3,8 @@
 One consolidated technical reference (merged 2026-09-17 from six previously
 separate files — architecture, data model, timer engine, sync, testing, and
 performance — to keep documentation to a handful of files worth actually
-reading). For product-level status and principles, see `STATUS.md` at the
-repo root.
+reading). For product-level status and principles, see `STATUS.md` in this
+same folder.
 
 ```text
 SwiftUI MenuBarExtra / windows
@@ -318,16 +318,23 @@ Append a new entry here whenever a non-obvious technical call is made.
   menu-building code lives in a small `NSObject` subclass with a
   closure-to-selector bridge (`CocoaAction`).
 
-### Streak, heatmap, and milestones derived from cached daily totals
+### Streak and heatmap derived from cached daily totals
 - Decision: `AppStore.reload()` computes `sessionValues`, `taskTitles`,
   `dailyTotals`, `taskTotals`, `streak` once per write and caches them;
   every stats view reads only the cached values, never re-filtering
   `sessions` itself. A day "counts" toward the streak once its total meets
   `dailyFocusGoal` (default 30 min); the current streak counts consecutive
   counting days ending today, and today's in-progress total doesn't break it.
+  `reload()` splits into `reloadTasks()` (tasks + `taskTitles`) and
+  `reloadSessions()` (sessions + aggregates); `recordSession` skips both
+  fetches and updates `sessions`/`sessionValues`/aggregates in memory from
+  the record it just inserted or mutated, since it already holds the exact
+  data a re-fetch would produce.
 - Reason: `StatisticsView` previously re-derived everything from full
   history on every render (~6 full passes) — deriving once in `reload()`
-  keeps every stats screen O(1) to render.
+  keeps every stats screen O(1) to render. Splitting `reload()` and
+  updating `recordSession` in memory keeps the Stop/complete-task click
+  path off the full-history SwiftData fetch entirely.
 
 ### Optional sync boundary
 - Decision: local persistence and the outbox are usable without Supabase;
