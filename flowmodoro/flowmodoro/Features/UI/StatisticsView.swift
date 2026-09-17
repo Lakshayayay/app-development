@@ -60,7 +60,6 @@ struct StatisticsView: View {
                     )
                     .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: period)
                 }
-                MilestoneSection(series: cumulativeSeries)
                 TaskBreakdownSection(bars: taskBars(values))
             }
             .padding(24)
@@ -69,16 +68,10 @@ struct StatisticsView: View {
         .frame(minWidth: 680, minHeight: 720)
     }
 
-    private var cumulativeSeries: [DailyFocus] {
-        guard let earliest = store.dailyTotals.keys.min() else { return [] }
-        let days = StatisticsEngine.days(from: earliest, through: .now)
-        return StatisticsEngine.cumulative(StatisticsEngine.zeroFilled(store.dailyTotals, days: days))
-    }
-
     private func taskBars(_ values: [FocusSessionValue]) -> [TaskBar] {
         let factors = StatisticsEngine.taskFactors(values)
-        var bars = factors.prefix(5).map { TaskBar(name: store.taskTitle(for: $0.taskID), duration: $0.totalFocused) }
-        let other = factors.dropFirst(5).reduce(0) { $0 + $1.totalFocused }
+        var bars = factors.prefix(8).map { TaskBar(name: store.taskTitle(for: $0.taskID), duration: $0.totalFocused) }
+        let other = factors.dropFirst(8).reduce(0) { $0 + $1.totalFocused }
         if other > 0 { bars.append(TaskBar(name: "Other", duration: other)) }
         return bars
     }
@@ -324,59 +317,6 @@ private struct ProgressSection: View {
     }
 }
 
-// MARK: - Milestones
-
-private struct MilestoneSection: View {
-    let series: [DailyFocus]
-
-    private var total: TimeInterval { series.last?.duration ?? 0 }
-    private var milestone: TimeInterval? { StatisticsEngine.nextMilestone(total: total) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("How far you've come").font(.headline)
-            Text(caption).font(.caption).foregroundStyle(.secondary)
-            if series.isEmpty {
-                Text("Start a session to begin your history.").foregroundStyle(.secondary)
-            } else {
-                Chart {
-                    ForEach(series) { day in
-                        AreaMark(x: .value("Date", day.date), y: .value("Hours", day.duration / 3600))
-                            .foregroundStyle(LinearGradient(colors: [Color.accentColor.opacity(0.4), Color.accentColor.opacity(0.02)],
-                                                            startPoint: .top, endPoint: .bottom))
-                            .interpolationMethod(.monotone)
-                        LineMark(x: .value("Date", day.date), y: .value("Hours", day.duration / 3600))
-                            .foregroundStyle(Color.accentColor)
-                            .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                            // .monotone, not .catmullRom: a running total never decreases, and
-                            // catmull-rom overshoot would draw dips that never happened.
-                            .interpolationMethod(.monotone)
-                    }
-                    if let last = series.last {
-                        PointMark(x: .value("Date", last.date), y: .value("Hours", last.duration / 3600))
-                            .symbolSize(80)
-                            .foregroundStyle(Color.accentColor)
-                            .annotation(position: .top, alignment: .trailing, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                                ChartCallout(title: formatDuration(last.duration), detail: "so far")
-                            }
-                    }
-                    if let milestone {
-                        RuleMark(y: .value("Milestone", milestone / 3600))
-                            .foregroundStyle(.secondary)
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                    }
-                }
-                .frame(height: 160)
-            }
-        }
-    }
-
-    private var caption: String {
-        guard let milestone else { return "\(formatDuration(total)) focused · every milestone reached" }
-        return "\(formatDuration(total)) focused · next \(Int(milestone / 3600))h (\(formatDuration(milestone - total)) to go)"
-    }
-}
-
 // MARK: - By task
 
 private struct TaskBreakdownSection: View {
@@ -397,7 +337,7 @@ private struct TaskBreakdownSection: View {
                         }
                 }
                 .chartXAxis(.hidden) // every bar is labelled directly
-                .frame(height: CGFloat(bars.count) * 32 + 12)
+                .frame(height: CGFloat(bars.count) * 48 + 12)
             }
         }
     }

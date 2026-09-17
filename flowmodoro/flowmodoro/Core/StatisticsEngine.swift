@@ -166,21 +166,6 @@ enum StatisticsEngine {
         return Streak(current: current, best: best)
     }
 
-    static func cumulative(_ daily: [DailyFocus]) -> [DailyFocus] {
-        var running: TimeInterval = 0
-        return daily.map { day in
-            running += day.duration
-            return DailyFocus(date: day.date, duration: running)
-        }
-    }
-
-    private static let milestones: [TimeInterval] = [10, 25, 50, 100, 250, 500, 1000].map { $0 * 3600 }
-
-    /// The smallest milestone not yet reached, or nil once every one is.
-    static func nextMilestone(total: TimeInterval) -> TimeInterval? {
-        milestones.first { $0 > total }
-    }
-
     /// Per-task today/total focused time, cached once per AppStore.reload()
     /// instead of recomputed on every popover render — see AppStore.taskTotals.
     static func taskTotals(_ sessions: [FocusSessionValue], calendar: Calendar = .current, now: Date = .now) -> [UUID: TaskTotal] {

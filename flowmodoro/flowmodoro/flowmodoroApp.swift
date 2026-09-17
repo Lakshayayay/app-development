@@ -77,10 +77,12 @@ struct MenuBarLabel: View {
         // constraint solving and never returns). A plain, structurally
         // stable HStack driven by TimerEngine's shared clock avoids it.
         HStack(spacing: 4) {
-            if let symbol { Image(systemName: symbol).imageScale(.small) }
-            if let text = text(at: store.timer.now) {
-                Text(text).monospacedDigit().foregroundStyle(isPaused ? .secondary : .primary)
-            }
+            Image(systemName: symbol ?? "timer")
+                .imageScale(.small)
+                .opacity(symbol == nil ? 0 : 1)
+            Text(text(at: store.timer.now) ?? "")
+                .monospacedDigit()
+                .foregroundStyle(isPaused ? .secondary : .primary)
         }
     }
 

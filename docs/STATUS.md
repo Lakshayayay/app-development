@@ -91,10 +91,17 @@ If the answer isn't obviously yes, simplify.
 - Timestamp-derived timer — correct across sleep/wake, popover close,
   relaunch, and a slept-through auto-continue (which now ends the run
   cleanly instead of fabricating a backdated session).
-- Inline task list in the popover: complete/uncomplete, completed tasks
-  collapse under a disclosure, each row shows today's/lifetime focused time,
-  and every pressable control (checkbox, row, new-task button, footer)
-  gives spring-press feedback.
+- Inline task list in the popover, in a min/max-height scrolling band (never
+  cramped at 1 task, never balloons the popover past ~7): complete/
+  uncomplete, completed tasks collapse under a disclosure, each row shows
+  a single duration when today's and lifetime focused time are equal or
+  both (with a tooltip) when they differ, and every pressable control
+  (checkbox, row, new-task button, footer) gives spring-press feedback.
+- Every timer control button fires on the first click (full 52pt glass
+  circle is hit-testable, not just the glyph) with no perceptible delay
+  between press and state change — the popover no longer resizes on
+  Start/Stop, and `Stop`/complete-task update in-memory aggregates
+  instead of re-fetching full history on the click path.
 - A single shared 1 Hz clock drives every ticking display; only the timer
   ring's own view re-renders on each tick, not the surrounding controls.
 - SwiftData persistence for tasks, sessions, settings; a local outbox that
@@ -103,8 +110,8 @@ If the answer isn't obviously yes, simplify.
 - History and Today/Week/Month/Year/Total statistics: a daily goal, a
   current/best streak, a today-vs-goal ring, a 52-week heatmap, accent-
   gradient period bar charts with a goal line and rising-bar entrance,
-  and a by-task breakdown — all derived facts from recorded sessions, no
-  points/badges/levels.
+  and a by-task breakdown (up to 8 named tasks plus "Other") — all
+  derived facts from recorded sessions, no points/badges/levels.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
 - Real Supabase sync: SDK integrated, schema + RLS applied, email OTP auth,
   offline-safe outbox transport, and (as of this branch) an actual network-
@@ -152,6 +159,16 @@ need a human, not more code:
 Known non-blocking cruft: `REGISTER_APP_GROUPS = YES` is dead build config
 on the app target — no app-group ID configured anywhere, no widget
 extension target exists yet.
+
+A follow-up round fixed the remaining "press it once or twice" feel
+(missing hit target on the 52pt timer buttons, duplicate press-feedback
+systems fighting each other, the popover resizing on every Start/Stop) and
+rebalanced the popover (smaller ring, scrolling task list, collapsed
+duplicate time label) and Statistics ("By task" grown into the space freed
+by dropping the milestone chart). Typechecked against the real macOS SDK
+(Xcode's own build/test tooling isn't available in every environment this
+project is worked in) but not yet run through Xcode's `xcodebuild test` or
+a manual click-through on a real build — do that before calling it done.
 
 ## Where the deeper detail lives
 

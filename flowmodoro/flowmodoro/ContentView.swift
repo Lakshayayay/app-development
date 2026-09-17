@@ -84,10 +84,14 @@ struct FlowmodoraPopover: View {
                 Button("Create your first task") { showingNewTask = true }
                     .buttonStyle(.bordered)
             } else {
-                VStack(spacing: 2) {
-                    ForEach(activeTasks) { task in TaskRow(task: task) }
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(activeTasks) { task in TaskRow(task: task) }
+                    }
+                    .animation(.smooth(duration: 0.25), value: activeTasks.map(\.id))
                 }
-                .animation(.smooth(duration: 0.25), value: activeTasks.map(\.id))
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(minHeight: 78, maxHeight: 182)
                 if !completedTasks.isEmpty {
                     DisclosureGroup("Completed (\(completedTasks.count))") {
                         VStack(spacing: 2) {
@@ -185,6 +189,7 @@ struct TaskRow: View {
                     Text(timeLabel)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .help("\(formattedToday) today · \(formattedTotal) total")
                 }
                 .contentShape(Rectangle())
             }
@@ -198,11 +203,18 @@ struct TaskRow: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isSelected)
     }
 
-    private var timeLabel: String {
+    private var formattedToday: String {
         let totals = store.taskTotals[task.id]
-        let today = (totals?.today ?? 0) + liveElapsed
-        let total = (totals?.total ?? 0) + liveElapsed
-        return "\(formatDuration(today)) · \(formatDuration(total))"
+        return formatDuration((totals?.today ?? 0) + liveElapsed)
+    }
+
+    private var formattedTotal: String {
+        let totals = store.taskTotals[task.id]
+        return formatDuration((totals?.total ?? 0) + liveElapsed)
+    }
+
+    private var timeLabel: String {
+        formattedToday == formattedTotal ? formattedToday : "\(formattedToday) · \(formattedTotal)"
     }
 }
 

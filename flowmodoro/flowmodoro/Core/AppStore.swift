@@ -186,20 +186,38 @@ final class AppStore {
     }
 
     func reload() {
+        reloadTasks()
+        reloadSessions()
+    }
+
+    private func reloadTasks() {
         do {
             tasks = try modelContext.fetch(FetchDescriptor<FocusTask>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
                 .filter { $0.deletedAt == nil }
-            sessions = try modelContext.fetch(FetchDescriptor<FocusSessionRecord>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)]))
-                .filter { $0.deletedAt == nil }
-            sessionValues = sessions.map(FocusSessionValue.init)
             taskTitles = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
-            dailyTotals = StatisticsEngine.dailyTotals(sessionValues)
-            taskTotals = StatisticsEngine.taskTotals(sessionValues)
-            streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
-            syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
             alertMessage = "Unable to read local focus data."
         }
+    }
+
+    private func reloadSessions() {
+        do {
+            sessions = try modelContext.fetch(FetchDescriptor<FocusSessionRecord>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)]))
+                .filter { $0.deletedAt == nil }
+            sessionValues = sessions.map(FocusSessionValue.init)
+            recomputeAggregates()
+            if syncEngine.status.isConfigured {
+                syncEngine.refresh(pendingChanges: pendingOutboxCount())
+            }
+        } catch {
+            alertMessage = "Unable to read local focus data."
+        }
+    }
+
+    private func recomputeAggregates() {
+        dailyTotals = StatisticsEngine.dailyTotals(sessionValues)
+        taskTotals = StatisticsEngine.taskTotals(sessionValues)
+        streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
     }
 
     @discardableResult
@@ -211,7 +229,7 @@ final class AppStore {
         settings.selectedTaskID = task.id
         settings.updatedAt = .now
         save(taskID: task.id, entityType: "task", operation: "upsert")
-        reload()
+        reloadTasks()
         return task
     }
 
@@ -236,7 +254,7 @@ final class AppStore {
             settings.updatedAt = .now
         }
         save(taskID: task.id, entityType: "task", operation: "upsert")
-        reload()
+        reloadTasks()
     }
 
     func setMode(_ mode: FocusMode) {
@@ -275,21 +293,29 @@ final class AppStore {
         interrupted: Bool = false
     ) {
         guard focusedDuration > 0 else { return }
-        if let existing = sessions.first(where: { $0.id == id }) {
+        let record: FocusSessionRecord
+        if let index = sessions.firstIndex(where: { $0.id == id }) {
+            let existing = sessions[index]
             existing.endedAt = endedAt
             existing.focusedDuration = focusedDuration
             existing.completed = completed
             existing.interrupted = interrupted
             existing.updatedAt = .now
+            record = existing
+            sessions[index] = existing
+            sessionValues[index] = FocusSessionValue(record)
         } else {
-            modelContext.insert(FocusSessionRecord(
+            record = FocusSessionRecord(
                 id: id, taskID: taskID, mode: mode, startedAt: startedAt, endedAt: endedAt,
                 focusedDuration: focusedDuration, plannedDuration: plannedDuration,
                 breakDuration: breakDuration, completed: completed, interrupted: interrupted
-            ))
+            )
+            modelContext.insert(record)
+            sessions.insert(record, at: 0)
+            sessionValues.insert(FocusSessionValue(record), at: 0)
         }
+        recomputeAggregates()
         save(taskID: id, entityType: "focus_session", operation: "upsert")
-        reload()
         if completed, settings.notificationsEnabled {
             notificationService.requestAuthorizationIfNeeded()
         }
@@ -319,8 +345,8 @@ final class AppStore {
                 ))
                 try modelContext.save()
                 requestSync()
+                syncEngine.refresh(pendingChanges: pendingOutboxCount())
             }
-            syncEngine.refresh(pendingChanges: pendingOutboxCount())
         } catch {
             alertMessage = AppError.couldNotSave.localizedDescription
         }

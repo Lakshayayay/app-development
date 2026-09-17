@@ -26,6 +26,10 @@ struct FlowmodoraTimerView: View {
         store.timer.phase == .idle && store.settings.selectedMode == .pomodoro
     }
 
+    private var shouldShowHint: Bool {
+        store.timer.phase == .idle && store.settings.selectedTaskID == nil
+    }
+
     /// The only part of the timer UI that reads the 1 Hz clock. With it split
     /// out, a tick re-renders just this view; FlowmodoraTimerView.body and its
     /// glass controls no longer depend on `timer.now`.
@@ -58,7 +62,7 @@ struct FlowmodoraTimerView: View {
 
                 VStack(spacing: 8) {
                     Text(displayValue(at: now))
-                        .font(.system(size: 44, weight: .bold, design: .rounded).monospacedDigit())
+                        .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(.primary)
                         .contentTransition(.numericText())
                         // Keyed on phase, not on the ticking value itself, so
@@ -72,7 +76,7 @@ struct FlowmodoraTimerView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 250, height: 250)
+            .frame(width: 220, height: 220)
         }
 
         private func lap(at date: Date) -> Int {
@@ -143,11 +147,10 @@ struct FlowmodoraTimerView: View {
 
     @ViewBuilder private var controls: some View {
         VStack(spacing: 8) {
-            if store.timer.phase == .idle, store.settings.selectedTaskID == nil {
-                Text("Select a task to begin")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text("Select a task to begin")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .opacity(shouldShowHint ? 1 : 0)
             GlassEffectContainer(spacing: 20) {
                 HStack(spacing: 20) {
                     ForEach(activeButtons) { button in
@@ -155,8 +158,9 @@ struct FlowmodoraTimerView: View {
                             Image(systemName: button.symbol)
                                 .font(.title2)
                                 .frame(width: 52, height: 52)
+                                .contentShape(Rectangle())
                         }
-                        .springButtonStyle()
+                        .buttonStyle(.plain)
                         .glassEffect(.regular.interactive(), in: .circle)
                         .glassEffectID(button.id, in: glassNamespace)
                         .disabled(button.isDisabled)

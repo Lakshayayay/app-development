@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Flowmodora
 
@@ -211,27 +212,6 @@ struct FlowmodoTests {
         #expect(filled.last?.duration == 600)
     }
 
-    @Test func cumulativeIsRunningSum() {
-        let day0 = Date(timeIntervalSince1970: 1_700_000_000)
-        let daily = [
-            DailyFocus(date: day0, duration: 100),
-            DailyFocus(date: day0.addingTimeInterval(86_400), duration: 50),
-            DailyFocus(date: day0.addingTimeInterval(172_800), duration: 0),
-            DailyFocus(date: day0.addingTimeInterval(259_200), duration: 25),
-        ]
-        #expect(StatisticsEngine.cumulative(daily).map(\.duration) == [100, 150, 150, 175])
-    }
-
-    @Test func nextMilestoneReturnsSmallestUnreached() {
-        // Both sides must be unambiguously TimeInterval (Double) — comparing
-        // against a bare Int literal here silently fails inside #expect
-        // (mismatched operand types get boxed via AnyHashable for its
-        // diagnostics, and Double(36000.0) != Int(36000) once boxed).
-        #expect(StatisticsEngine.nextMilestone(total: 0) == 10.0 * 3_600)
-        #expect(StatisticsEngine.nextMilestone(total: 10.0 * 3_600) == 25.0 * 3_600)
-        #expect(StatisticsEngine.nextMilestone(total: 1_000.0 * 3_600) == nil)
-    }
-
     @Test @MainActor func tickerRunsOnlyWhileRunning() {
         // The shared clock (TimerEngine.now) must tick only while a timer is
         // actually running — idle/paused/suggested-break must stay silent so
@@ -375,6 +355,31 @@ struct FlowmodoTests {
             #expect(index == cell.weekIndex * 7 + cell.weekday)
         }
         #expect(cells.last?.date == calendar.startOfDay(for: now))
+    }
+
+    @Test @MainActor func recordSessionMatchesFullReload() throws {
+        // Guards AppStore.recordSession's in-memory aggregate update against
+        // drifting from the fetch-and-recompute path it replaced.
+        let container = try ModelContainer(
+            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let store = AppStore(modelContainer: container)
+        let taskID = UUID()
+        let start = Date(timeIntervalSince1970: 8_000)
+
+        store.recordSession(id: UUID(), taskID: taskID, mode: .flowmodoro, startedAt: start, endedAt: start.addingTimeInterval(600), focusedDuration: 600, plannedDuration: nil, completed: true)
+        store.recordSession(id: UUID(), taskID: taskID, mode: .flowmodoro, startedAt: start.addingTimeInterval(1_000), endedAt: start.addingTimeInterval(1_300), focusedDuration: 300, plannedDuration: nil, completed: true)
+
+        let incrementalSessionValues = store.sessionValues
+        let incrementalTaskTotals = store.taskTotals
+        let incrementalTodayTotal = store.todayTotal
+
+        store.reload()
+
+        #expect(store.sessionValues == incrementalSessionValues)
+        #expect(store.taskTotals == incrementalTaskTotals)
+        #expect(store.todayTotal == incrementalTodayTotal)
     }
 
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {
