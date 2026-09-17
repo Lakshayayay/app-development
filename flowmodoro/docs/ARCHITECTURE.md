@@ -212,17 +212,21 @@ otherwise.
 
 | Scenario | Metric | Before | After |
 |---|---|---|---|
-| S1 idle, closed | CPU % / idle wakeups/s | 0.1% / 0.0 | *pending Task 3.4* |
-| S2 running, closed | CPU % / idle wakeups/s | not measured¹ | *pending Task 3.4* |
-| S3 running, open | CPU % / idle wakeups/s | not measured¹ | *pending Task 3.4* |
-| S4 stats hover sweep | body updates (Heatmap/Progress) / hitches | not measured¹ | *pending Task 3.4* |
+| S1 idle, closed | CPU % / idle wakeups/s | 0.1% / 0.0 | 0.1% / 0.0 |
+| S2 running, closed | CPU % / idle wakeups/s | not measured¹ | not measured¹ |
+| S3 running, open | CPU % / idle wakeups/s | not measured¹ | not measured¹ |
+| S4 stats hover sweep | body updates (Heatmap/Progress) / hitches | not measured¹ | not measured¹ |
 
 ¹ S2–S4 need a real click through the menu-bar popover (Start a timer, open
 Statistics, sweep the pointer over a chart) — this is a `MenuBarExtra`
 popover, not a normal window, and isn't reliably reachable through
 AppleScript/System Events (a status-item click is scriptable, but the
 popover it opens exposes no AX window — `windows` returns 0 right after the
-click). These numbers should be gathered by hand once Task 3.4 runs.
+click). Confirmed again on the Task 3.4 pass (2026-09-17): the status-item
+click succeeds, `windows` still returns 0 immediately after, and `DemoData`
+seeds tasks without selecting one, so even the ⌘⌥S global hotkey has nothing
+to start. These numbers still need to be gathered by hand: open the popover,
+select a task, run S2/S3, then open Statistics and sweep the pointer for S4.
 `xcrun xctrace list templates` confirms the `SwiftUI` template is available
 on this machine for that pass.
 

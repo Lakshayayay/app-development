@@ -152,20 +152,31 @@ pass. Full task-by-task plan and exact code:
       morph animation
 - [x] Task 4.1 — security migration **written**
       (`flowmodoro/Supabase/003_close_public_exposure.sql`, closes an
-      anon-readable data leak) — **not yet applied to the live Supabase
-      project**, pending an explicit go-ahead
+      anon-readable data leak) — **still not applied to the live Supabase
+      project**: the owner gave the go-ahead (2026-09-17), but the
+      supabase-project MCP connection used to apply it is read-only
+      (`transaction_read_only = on`), so it needs either a Dashboard SQL
+      editor run or a read-write MCP connection
 - [x] Task 4.2 — network-client sandbox entitlement (sync was previously
       silently blocked), dropped an unused file-access entitlement,
       hardened runtime — verified against the actual signed binary
 - [x] Task 4.3 — sign-in field sanitization + AutoFill hints
+- [x] Task 3.3 — coalesce sync bursts (`AppStore.requestSync()`) — task
+      review dispatched 2026-09-17: ✅ spec compliant, 21/21 tests pass,
+      no Critical/Important findings, approved
 
-**Remaining (2 of 12 tasks + final review):**
-- [ ] Task 3.3 — coalesce sync bursts (`AppStore.requestSync()`) — code
-      is written and committed (`3a369ed`), tests pass, but its own review
-      hadn't been dispatched yet when this branch was paused
-- [ ] Task 3.4 — after-benchmarks: repeat Task 0.1's measurement against
-      this branch's HEAD and fill in the "After" column of
-      `flowmodoro/docs/ARCHITECTURE.md`'s Performance table
+**Remaining (1 of 12 tasks + final review):**
+- [ ] Task 3.4 — after-benchmarks: S1 (idle, closed) re-measured
+      2026-09-17 at 0.1% CPU / 0.0 wakeups, unchanged from Before. S2–S4
+      still need a manual click-through — confirmed again this pass that
+      System Events can click the status item but the popover it opens
+      exposes no AX window (`windows` returns 0), and `DemoData` doesn't
+      pre-select a task, so even the ⌘⌥S hotkey has nothing to start.
+      Acceptance criteria needing S2–S4 (10× fewer S4 body updates, S2/S3
+      CPU no higher than before) are unverified until someone runs that
+      click-through by hand.
+- [ ] Task 4.1's live-DB apply (blocked on MCP read-only connection, see
+      above)
 - [ ] Final whole-branch review, then `finishing-a-development-branch`
       (decide PR vs. direct merge)
 
