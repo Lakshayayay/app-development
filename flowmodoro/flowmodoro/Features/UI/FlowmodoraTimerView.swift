@@ -36,6 +36,7 @@ struct FlowmodoraTimerView: View {
     private struct TimerRing: View {
         @Environment(AppStore.self) private var store
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @AppStorage("hideMenuBarTimer") private var hideTimer = false
 
         var body: some View {
             // Driven by TimerEngine.now — its shared 1 Hz clock, ticking only
@@ -45,38 +46,55 @@ struct FlowmodoraTimerView: View {
             // ticks itself, so 1 Hz reads as continuous.
             let now = store.timer.now
             let progress = progress(at: now)
-            return ZStack {
-                Circle()
-                    .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
+            return Button {
+                hideTimer.toggle()
+            } label: {
+                ZStack {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.2), lineWidth: 12)
 
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .opacity(isPaused ? 0.5 : 1)
-                    .animation(reduceMotion ? nil : .linear(duration: 1), value: progress)
-                    // Each Flowmodoro hour is a new view, so the ring restarts
-                    // from empty instead of animating backwards around the
-                    // whole lap.
-                    .id(lap(at: now))
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .opacity(isPaused ? 0.5 : 1)
+                        .animation(reduceMotion ? nil : .linear(duration: 1), value: progress)
+                        // Each Flowmodoro hour is a new view, so the ring restarts
+                        // from empty instead of animating backwards around the
+                        // whole lap.
+                        .id(lap(at: now))
 
-                VStack(spacing: 8) {
-                    Text(displayValue(at: now))
-                        .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
-                        .foregroundStyle(.primary)
-                        .contentTransition(.numericText())
-                        // Keyed on phase, not on the ticking value itself, so
-                        // this only rolls on a real discontinuity (start,
-                        // stop, skip) — a normal per-second tick hard-swaps,
-                        // the way a real clock does.
-                        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: store.timer.phase)
+                    VStack(spacing: 8) {
+                        Text(displayValue(at: now))
+                            .font(.system(size: 40, weight: .bold, design: .rounded).monospacedDigit())
+                            .foregroundStyle(.primary)
+                            .contentTransition(.numericText())
+                            // Keyed on phase, not on the ticking value itself, so
+                            // this only rolls on a real discontinuity (start,
+                            // stop, skip) — a normal per-second tick hard-swaps,
+                            // the way a real clock does.
+                            .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: store.timer.phase)
 
-                    Text(subtitle)
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
+                        Text(subtitle)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+
+                        // Always present (opacity-gated, not conditionally
+                        // inserted) so this never changes the ring's height —
+                        // see 877978a on popover resize from conditional views.
+                        Image(systemName: "cup.and.heat.waves")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .opacity(hideTimer ? 1 : 0)
+                    }
                 }
+                .frame(width: 220, height: 220)
+                .contentShape(Circle())
             }
-            .frame(width: 220, height: 220)
+            .buttonStyle(.plain)
+            .help(hideTimer ? "Show timer in menu bar" : "Hide timer from menu bar")
+            .accessibilityLabel(hideTimer ? "Show timer in menu bar" : "Hide timer from menu bar")
+            .accessibilityValue(displayValue(at: now))
         }
 
         private func lap(at date: Date) -> Int {

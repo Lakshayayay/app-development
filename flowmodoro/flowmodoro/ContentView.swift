@@ -127,6 +127,7 @@ struct FlowmodoraPopover: View {
                     }
                 }
                 .font(.subheadline).foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
             .springButtonStyle()
             Spacer()

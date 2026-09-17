@@ -65,6 +65,14 @@ final class StatusItemContextMenu: NSObject {
             menu.addItem(action("Complete “\(task.title)”", key: "") { [weak store] in store?.toggleTask(task) })
         }
 
+        if store.timer.phase != .idle {
+            let hidden = UserDefaults.standard.bool(forKey: "hideMenuBarTimer")
+            menu.addItem(.separator())
+            menu.addItem(action(hidden ? "Show Timer" : "Hide Timer", key: "h") {
+                UserDefaults.standard.set(!hidden, forKey: "hideMenuBarTimer")
+            })
+        }
+
         menu.addItem(.separator())
         menu.addItem(action("Quit Flowmodora", key: "q") { NSApplication.shared.terminate(nil) })
         return menu

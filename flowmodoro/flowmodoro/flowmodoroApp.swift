@@ -68,6 +68,7 @@ struct FlowmodoraApp: App {
 
 struct MenuBarLabel: View {
     @Environment(AppStore.self) private var store
+    @AppStorage("hideMenuBarTimer") private var hideTimer = false
 
     var body: some View {
         // Deliberately NOT a TimelineView here: using one as the root/label
@@ -90,9 +91,15 @@ struct MenuBarLabel: View {
         store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
     }
 
+    // Hidden while a timer is running replaces the icon+digits with a
+    // steaming-cup glyph — distinct from the break state's plain cup —
+    // instead of blanking the status item, which would look broken.
+    private var isHidden: Bool { hideTimer && store.timer.phase != .idle }
+
     // Idle shows an icon only and focus shows digits only — one signal at a
     // time instead of stacking a state icon on every state.
     private var symbol: String? {
+        if isHidden { return "cup.and.heat.waves" }
         switch store.timer.phase {
         case .idle: return "timer"
         case .breakTimer, .pausedBreak, .suggestedBreak: return "cup.and.saucer"
@@ -101,6 +108,7 @@ struct MenuBarLabel: View {
     }
 
     private func text(at date: Date) -> String? {
+        if isHidden { return nil }
         switch store.timer.phase {
         case .idle, .suggestedBreak: return nil
         case .focus where store.timer.mode == .flowmodoro:
