@@ -7,8 +7,7 @@ or a scratch working-notes ledger to figure out where things stand.
 
 ## What Flowmodora is
 
-A native macOS menu-bar focus timer (Flowmodoro + Pomodoro), local-first,
-with optional Supabase sync. See the repo root's `README.md` for build
+A native macOS menu-bar focus timer (Flowmodoro + Pomodoro), local-only. See the repo root's `README.md` for build
 instructions and `ARCHITECTURE.md` (this same folder) for how each
 subsystem works and why specific technical calls were made.
 
@@ -34,8 +33,8 @@ productivity app — it wins through restraint.
 - **No fake timer.** Never a counter incremented once a second. Derive
   displayed time from timestamps so it survives sleep/wake, suspension,
   popover close, and relaunch.
-- **One source of truth.** SwiftData is authoritative; Supabase is an
-  optional sync target, never the primary database.
+- **One source of truth.** SwiftData is the only database. (A
+  Supabase sync layer existed and was removed; see ARCHITECTURE.md.)
 - **Focus data reflects what actually happened**, not what the user
   intended — an interrupted session still counts for what was actually
   focused, and a slept-through auto-continue must never fabricate a
@@ -62,8 +61,8 @@ has it.
 
 ### Must-not-change without an explicit product decision
 Local-first behavior, native macOS direction, menu-bar-first UX, Flowmodoro,
-Pomodoro, tasks, history, statistics, SwiftData persistence, optional
-Supabase sync, notifications, global shortcuts, launch-at-login, widgets,
+Pomodoro, tasks, history, statistics, SwiftData persistence,
+notifications, global shortcuts, launch-at-login, widgets,
 minimalism.
 
 Everything else — class names, file layout, algorithms, dependency choices,
@@ -104,18 +103,13 @@ If the answer isn't obviously yes, simplify.
   instead of re-fetching full history on the click path.
 - A single shared 1 Hz clock drives every ticking display; only the timer
   ring's own view re-renders on each tick, not the surrounding controls.
-- SwiftData persistence for tasks, sessions, settings; a local outbox that
-  drains without unbounded growth, retries on a backoff, and coalesces a
-  burst of rapid writes into one sync pass instead of overlapping calls.
+- SwiftData persistence for tasks, sessions, settings; all local.
 - History and Today/Week/Month/Year/Total statistics: a daily goal, a
   current/best streak, a today-vs-goal ring, a 52-week heatmap, accent-
   gradient period bar charts with a goal line and rising-bar entrance,
   and a by-task breakdown (up to 8 named tasks plus "Other") — all
   derived facts from recorded sessions, no points/badges/levels.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
-- Real Supabase sync: SDK integrated, schema + RLS applied, email OTP auth,
-  offline-safe outbox transport, and (as of this branch) an actual network-
-  client sandbox entitlement so sync can reach the network at all.
 - App identity: name, icon, accent color, cleaned `Info.plist`.
 - Notifications, launch-at-login, light/dark/system appearance.
 - Sleep/wake, settings, streak, ticker-lifecycle, and Pomodoro-plan/rounds
@@ -150,11 +144,6 @@ need a human, not more code:
   pid,cpu,idlew -pid $PID` — no scriptable path exists yet: a status-item
   click is AppleScript/System-Events-reachable, but the popover it opens
   exposes no AX window to drive from a script.
-- **Security migration `003_close_public_exposure.sql` not yet applied to
-  the live Supabase project.** The file is written and reviewed; the owner
-  approved applying it (2026-09-17), but the available Supabase MCP
-  connection is read-only (`transaction_read_only = on`). Needs a Dashboard
-  SQL editor run or a read-write connection.
 
 Known non-blocking cruft: `REGISTER_APP_GROUPS = YES` is dead build config
 on the app target — no app-group ID configured anywhere, no widget

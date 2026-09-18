@@ -12,7 +12,6 @@ final class AppStore {
     let notificationService: NotificationService
     let loginItemService: LoginItemService
     let hotkeyService: GlobalHotkeyService
-    let syncEngine: LocalSyncEngine
 
     private(set) var settings: AppSettingsRecord
     private(set) var tasks: [FocusTask] = []
@@ -28,8 +27,6 @@ final class AppStore {
     var alertMessage: String?
 
     private var contextMenu: StatusItemContextMenu?
-    private var outboxRetryTask: Task<Void, Never>?
-    private var syncTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
     private var dayChangeObserver: NSObjectProtocol?
 
@@ -38,7 +35,6 @@ final class AppStore {
         notificationService = NotificationService()
         loginItemService = LoginItemService()
         hotkeyService = GlobalHotkeyService()
-        syncEngine = LocalSyncEngine()
 
         if let existing = try? modelContext.fetch(FetchDescriptor<AppSettingsRecord>()).first {
             settings = existing
@@ -52,7 +48,6 @@ final class AppStore {
         timer = TimerEngine()
         timer.store = self
         reload()
-        syncEngine.refresh(pendingChanges: pendingOutboxCount())
         contextMenu = StatusItemContextMenu(store: self)
         let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
             onStart: { [weak self] in
@@ -67,14 +62,6 @@ final class AppStore {
             alertMessage = "Global shortcuts could not be registered."
         }
 
-        // A beat after startup so LocalSyncEngine's auth state has had a
-        // chance to resolve (a restored session isn't known synchronously at
-        // init) — deciding "not configured" too early would wrongly purge a
-        // signed-in user's still-queued entries.
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            self?.purgeOutboxIfSyncNotConfigured()
-        }
         // queue: .main guarantees this runs on the main thread; assumeIsolated
         // asserts that rather than paying for an async hop through Task.
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -88,100 +75,6 @@ final class AppStore {
             forName: .NSCalendarDayChanged, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.reload() }
-        }
-    }
-
-    /// Uploads every queued OutboxEntry to Supabase and removes it on success.
-    /// A row that fails (offline, transient error) is left queued — the next
-    /// tick or the next save() retries it. Idempotent: upsert-by-id means a
-    /// retried row never creates a duplicate.
-    func attemptSync() async {
-        #if DEBUG
-        guard !DemoData.isActive else { return }
-        #endif
-        guard syncEngine.status.isConfigured, let userID = syncEngine.currentUserID else { return }
-        guard let entries = try? modelContext.fetch(FetchDescriptor<OutboxEntry>()), !entries.isEmpty else { return }
-
-        for entry in entries {
-            do {
-                switch entry.entityType {
-                case "task":
-                    guard let task = tasks.first(where: { $0.id == entry.entityID }) else {
-                        modelContext.delete(entry)
-                        continue
-                    }
-                    try await syncEngine.upsertTask(SupabaseTaskRow(
-                        id: task.id, user_id: userID, title: task.title, is_completed: task.isCompleted,
-                        completed_at: task.completedAt, created_at: task.createdAt,
-                        updated_at: task.updatedAt, deleted_at: task.deletedAt
-                    ))
-                case "focus_session":
-                    guard let session = sessions.first(where: { $0.id == entry.entityID }) else {
-                        modelContext.delete(entry)
-                        continue
-                    }
-                    try await syncEngine.upsertFocusSession(SupabaseFocusSessionRow(
-                        id: session.id, user_id: userID, task_id: session.taskID, mode: session.modeRawValue,
-                        started_at: session.startedAt, ended_at: session.endedAt,
-                        focused_duration: session.focusedDuration, planned_duration: session.plannedDuration,
-                        break_duration: session.breakDuration, completed: session.completed,
-                        interrupted: session.interrupted, created_at: session.createdAt,
-                        updated_at: session.updatedAt, deleted_at: session.deletedAt
-                    ))
-                case "settings":
-                    try await syncEngine.upsertSettings(SupabaseSettingsRow(
-                        id: settings.id, user_id: userID,
-                        payload: SupabaseSettingsPayload(
-                            selectedMode: settings.selectedModeRawValue, flowBreakRatio: settings.flowBreakRatio,
-                            pomodoroWorkDuration: settings.pomodoroWorkDuration,
-                            pomodoroShortBreakDuration: settings.pomodoroShortBreakDuration,
-                            pomodoroLongBreakDuration: settings.pomodoroLongBreakDuration,
-                            pomodoroCyclesBeforeLongBreak: settings.pomodoroCyclesBeforeLongBreak,
-                            dailyFocusGoal: settings.dailyFocusGoal
-                        ),
-                        updated_at: settings.updatedAt
-                    ))
-                default:
-                    break
-                }
-                modelContext.delete(entry)
-            } catch is CancellationError {
-                break // requestSync() cancelled us; stop draining rather than issuing doomed requests
-            } catch {
-                continue // leave queued; retried on the next tick or save()
-            }
-        }
-        try? modelContext.save()
-        syncEngine.refresh(pendingChanges: pendingOutboxCount())
-        scheduleOutboxRetry()
-    }
-
-    /// Merges a burst of writes (holding a stepper saves once per step) into a
-    /// single sync, and waits for any sync already running rather than
-    /// overlapping it: overlapping syncs fetched the same queued entries and
-    /// uploaded each one more than once.
-    private func requestSync() {
-        syncTask?.cancel()
-        syncTask = Task { [weak self, previous = syncTask] in
-            await previous?.value
-            try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
-            await self?.attemptSync()
-        }
-    }
-
-    /// Retries a non-empty outbox on a backoff instead of polling every
-    /// second — each write already attempts a drain immediately via save(),
-    /// so this only covers the offline/transient-failure case, and idles
-    /// (no scheduled task at all) once the outbox is empty.
-    private func scheduleOutboxRetry(after seconds: Double = 30) {
-        outboxRetryTask?.cancel()
-        guard syncEngine.status.isConfigured, syncEngine.status.pendingChanges > 0 else { return }
-        outboxRetryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, let self else { return }
-            await self.attemptSync()
-            self.scheduleOutboxRetry(after: min(seconds * 2, 1800))
         }
     }
 
@@ -206,9 +99,6 @@ final class AppStore {
                 .filter { $0.deletedAt == nil }
             sessionValues = sessions.map(FocusSessionValue.init)
             recomputeAggregates()
-            if syncEngine.status.isConfigured {
-                syncEngine.refresh(pendingChanges: pendingOutboxCount())
-            }
         } catch {
             alertMessage = "Unable to read local focus data."
         }
@@ -228,7 +118,7 @@ final class AppStore {
         modelContext.insert(task)
         settings.selectedTaskID = task.id
         settings.updatedAt = .now
-        save(taskID: task.id, entityType: "task", operation: "upsert")
+        save()
         reloadTasks()
         return task
     }
@@ -236,7 +126,7 @@ final class AppStore {
     func selectTask(_ task: FocusTask) {
         settings.selectedTaskID = task.id
         settings.updatedAt = .now
-        save(taskID: task.id, entityType: "settings", operation: "upsert")
+        save()
     }
 
     func toggleTask(_ task: FocusTask) {
@@ -253,18 +143,18 @@ final class AppStore {
             settings.selectedTaskID = nil
             settings.updatedAt = .now
         }
-        save(taskID: task.id, entityType: "task", operation: "upsert")
+        save()
         reloadTasks()
     }
 
     func setMode(_ mode: FocusMode) {
         settings.selectedMode = mode
-        save(taskID: settings.selectedTaskID, entityType: "settings", operation: "upsert")
+        save()
     }
 
     func updateSettings() {
         settings.updatedAt = .now
-        save(taskID: settings.selectedTaskID, entityType: "settings", operation: "upsert")
+        save()
         // Keeps the streak in sync the instant the daily goal changes,
         // instead of waiting for the next unrelated write to call reload().
         streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
@@ -315,7 +205,7 @@ final class AppStore {
             sessionValues.insert(FocusSessionValue(record), at: 0)
         }
         recomputeAggregates()
-        save(taskID: id, entityType: "focus_session", operation: "upsert")
+        save()
         if completed, settings.notificationsEnabled {
             notificationService.requestAuthorizationIfNeeded()
         }
@@ -326,51 +216,11 @@ final class AppStore {
         return title
     }
 
-    func pendingOutboxCount() -> Int {
-        (try? modelContext.fetchCount(FetchDescriptor<OutboxEntry>())) ?? 0
-    }
-
-    private func save(taskID: UUID?, entityType: String, operation: String) {
+    private func save() {
         do {
             try modelContext.save()
-            // Only queue a sync outbox entry when sync is actually configured.
-            // No transport exists to drain the outbox yet (Supabase sync is
-            // still a placeholder), so queuing unconditionally — as this used
-            // to — meant every local write grew this table forever with rows
-            // nothing would ever consume.
-            if let taskID, syncEngine.status.isConfigured {
-                modelContext.insert(OutboxEntry(
-                    entityType: entityType, entityID: taskID, operation: operation,
-                    payload: outboxPayload(entityType: entityType, entityID: taskID, operation: operation)
-                ))
-                try modelContext.save()
-                requestSync()
-                syncEngine.refresh(pendingChanges: pendingOutboxCount())
-            }
         } catch {
             alertMessage = AppError.couldNotSave.localizedDescription
         }
-    }
-
-    private func outboxPayload(entityType: String, entityID: UUID, operation: String) -> String {
-        let fields: [String: String] = [
-            "entityType": entityType,
-            "entityID": entityID.uuidString,
-            "operation": operation,
-            "queuedAt": ISO8601DateFormatter().string(from: .now),
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: fields),
-              let json = String(data: data, encoding: .utf8) else { return "{}" }
-        return json
-    }
-
-    /// One-time cleanup: sync has never been configurable in any shipped
-    /// version of this app, so any OutboxEntry rows already on disk are
-    /// orphaned placeholder junk from before this fix, not real queued work.
-    private func purgeOutboxIfSyncNotConfigured() {
-        guard !syncEngine.status.isConfigured else { return }
-        guard let stale = try? modelContext.fetch(FetchDescriptor<OutboxEntry>()), !stale.isEmpty else { return }
-        stale.forEach { modelContext.delete($0) }
-        try? modelContext.save()
     }
 }

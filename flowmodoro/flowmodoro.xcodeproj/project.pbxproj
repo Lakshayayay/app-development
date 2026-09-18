@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F10000000000000000000003 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = F10000000000000000000002 /* Supabase */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,7 +68,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				F10000000000000000000003 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,7 +128,6 @@
 			);
 			name = flowmodoro;
 			packageProductDependencies = (
-				F10000000000000000000002 /* Supabase */,
 			);
 			productName = flowmodoro;
 			productReference = 2972D0253055BDCE003284CA /* Flowmodora.app */;
@@ -214,9 +211,6 @@
 			);
 			mainGroup = 2972D01C3055BDCD003284CA;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				F10000000000000000000001 /* XCRemoteSwiftPackageReference "supabase-swift" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2972D0263055BDCE003284CA /* Products */;
 			projectDirPath = "";
@@ -599,25 +593,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		F10000000000000000000001 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/supabase/supabase-swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.0.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		F10000000000000000000002 /* Supabase */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F10000000000000000000001 /* XCRemoteSwiftPackageReference "supabase-swift" */;
-			productName = Supabase;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2972D01D3055BDCE003284CA /* Project object */;
 }

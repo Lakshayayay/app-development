@@ -30,9 +30,7 @@ even if you close the popover, sleep your laptop, or quit the app entirely
 — your session picks up right where it left off.
 
 It's also **local-first**: every task, session, and stat lives on your Mac.
-No account, no sign-up, no internet connection required. If you ever want
-your data synced across machines, an optional, opt-in sync is there — but
-the app never asks you for it, and never needs it.
+No account, no sign-up, no internet connection required.
 
 ## What it looks like
 
@@ -67,9 +65,8 @@ the app never asks you for it, and never needs it.
   your device.
 - **Gentle nudges** — optional notifications and sounds when an interval
   ends, launch-at-login, and light/dark/system appearance, all in Settings.
-- **Your data, your machine** — everything above works fully offline.
-  Optional Supabase sync exists for people who want their history on more
-  than one Mac, but it's opt-in and the app never depends on it.
+- **Your data, your machine** — everything above works fully offline,
+  and nothing ever leaves your Mac.
 
 ## Under the hood
 
@@ -127,19 +124,10 @@ TimerEngine      SwiftData          system services
   throughout for state, so views only re-render the small slice of the
   screen that actually changed.
 
-**Sync (optional)**
-- Supabase (Postgres + Row Level Security) as an *optional* remote, added
-  through an outbox pattern: local writes are always immediate and
-  authoritative, and a background outbox retries idempotent upserts to the
-  server whenever a connection and sign-in exist. If Supabase is
-  unreachable or never configured, nothing about the core app changes.
-- Auth is email one-time-code, backed by Postgres RLS policies as the real
-  authorization boundary — not by keeping any secret client-side.
-
 **Craft details**
 - A `WidgetExtension` target for a future home-screen widget.
-- A real test suite (`flowmodoroTests`) that runs with zero network,
-  zero Supabase credentials, and zero notification permissions required —
+- A real test suite (`flowmodoroTests`) that runs with zero network
+  and zero notification permissions required —
   the timer's timestamp math and statistics calculations are validated in
   complete isolation from the outside world.
 - Full internal docs in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and

@@ -247,11 +247,6 @@ struct HistoryView: View {
 
 struct SettingsView: View {
     @Environment(AppStore.self) private var store
-    @State private var email = ""
-    @State private var otpCode = ""
-    @State private var awaitingCode = false
-    @State private var syncErrorMessage: String?
-    @State private var isWorking = false
 
     var body: some View {
         Form {
@@ -279,83 +274,8 @@ struct SettingsView: View {
                     )
                 }
             }
-            Section("Sync") {
-                Label(store.syncEngine.status.message, systemImage: "externaldrive")
-                if let signedInEmail = store.syncEngine.currentEmail {
-                    Text("Signed in as \(signedInEmail)").font(.caption).foregroundStyle(.secondary)
-                    Button("Sign Out") {
-                        isWorking = true
-                        Task {
-                            defer { isWorking = false }
-                            do { try await store.syncEngine.signOut() }
-                            catch { syncErrorMessage = "Sign out failed. Try again." }
-                        }
-                    }
-                    .disabled(isWorking)
-                } else if awaitingCode {
-                    TextField("6-digit code", text: $otpCode)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.oneTimeCode) // offers the code from Mail via AutoFill
-                        .onChange(of: otpCode) { _, code in
-                            // ASCII digits only: pasted codes often carry spaces or dashes.
-                            let digits = String(code.filter { $0.isASCII && $0.isNumber }.prefix(10))
-                            if digits != code { otpCode = digits }
-                        }
-                        .onSubmit(verifyCode)
-                    HStack {
-                        Button("Verify") { verifyCode() }
-                            .disabled(isWorking || otpCode.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Cancel") { awaitingCode = false; otpCode = ""; syncErrorMessage = nil }
-                            .buttonStyle(.plain)
-                    }
-                } else {
-                    TextField("Email", text: $email)
-                        .textFieldStyle(.roundedBorder)
-                        .textContentType(.emailAddress)
-                        .onSubmit(sendCode)
-                    Button("Send Code") { sendCode() }
-                        .disabled(isWorking || email.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if let syncErrorMessage {
-                    Text(syncErrorMessage).font(.caption).foregroundStyle(.red)
-                }
-                Text("Flowmodora is local-first. Optional Supabase sync can be configured without affecting timers or analytics.").font(.caption).foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped).padding().navigationTitle("Settings").frame(width: 520, height: 620)
-    }
-
-    private func sendCode() {
-        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        isWorking = true
-        syncErrorMessage = nil
-        Task {
-            defer { isWorking = false }
-            do {
-                try await store.syncEngine.requestSignIn(email: trimmed)
-                awaitingCode = true
-            } catch {
-                syncErrorMessage = "Couldn't send a code. Check the address and try again."
-            }
-        }
-    }
-
-    private func verifyCode() {
-        let code = otpCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty else { return }
-        isWorking = true
-        syncErrorMessage = nil
-        Task {
-            defer { isWorking = false }
-            do {
-                try await store.syncEngine.verifySignIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), code: code)
-                awaitingCode = false
-                otpCode = ""
-            } catch {
-                syncErrorMessage = "That code didn't work. Try again."
-            }
-        }
     }
 }
 

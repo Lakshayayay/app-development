@@ -31,7 +31,8 @@ SwiftData models are deliberately small:
 - `FocusSessionRecord` — one logical focus session, including actual focused
   duration.
 - `AppSettingsRecord` — user preferences and defaults.
-- `OutboxEntry` — local synchronization intent, retained independently of UI.
+- `OutboxEntry` — unused. Left over from the removed Supabase sync and kept in
+  the schema only so existing stores keep opening without a migration.
 
 Timer runtime state is a Codable `TimerSnapshot` in `UserDefaults`. This is
 not a second database: it is the small durable recovery record needed to
@@ -60,12 +61,6 @@ UUID is created before local recording so a remote upload can be idempotent.
 
 ### AppSettingsRecord
 Stores user preferences only; it never contains authentication secrets.
-Supabase tokens belong in Keychain when the remote transport is enabled.
-
-### OutboxEntry
-An append-only local intent to upsert a task, settings record, or focus
-session. It is safe to retry because remote IDs are client-generated UUIDs
-and the Supabase contract uses `upsert` on those IDs.
 
 ### Migration strategy
 Future schema changes should add a new SwiftData model version and
@@ -115,71 +110,12 @@ focused time and counts in Statistics identically to a completed session
 (see Decisions log). Breaks are ephemeral and are not stored as focus
 sessions.
 
-## Sync (optional Supabase transport)
+## Sync (removed)
 
-The app is deliberately local-first. SwiftData is authoritative for runtime
-behavior, history, and statistics. `OutboxEntry` records local changes
-without blocking the user — but only once sync is actually configured
-(`LocalSyncEngine.status.isConfigured`, true once a user is signed in).
-`AppStore.save()` does not queue entries while signed out.
-
-**Transport:** `Core/Supabase.swift` holds the `SupabaseClient` (project URL
-+ anon/publishable key — see the note on that key below) and
-`LocalSyncEngine`, which owns auth state and the actual upsert calls.
-`AppStore.attemptSync()` is the drain: it reads every pending `OutboxEntry`,
-builds the matching row from the in-memory `tasks`/`sessions`/`settings`
-already loaded, upserts it, and deletes the outbox entry only on success. A
-row that fails (offline, transient error) stays queued — every subsequent
-`save()` (coalesced through `AppStore.requestSync()`, which debounces a
-burst of rapid writes into one sync pass), plus a backoff retry
-(`AppStore.scheduleOutboxRetry`, 30s doubling to 30min while anything is
-pending, which calls `attemptSync()` directly and can in principle overlap a
-coalesced drain), drains it. Upserting by the client-generated UUID makes
-retries idempotent, so an overlap is harmless.
-
-- Focus sessions are append-oriented and idempotent by `id`.
-- Mutable tasks use last-write-wins by `updated_at` (re-upserting the full
-  row each time; the server doesn't currently reject a stale write).
-- The app keeps showing local data if every remote request fails — nothing
-  in `attemptSync()` blocks the timer, task, or statistics code paths.
-
-**Authentication:** email one-time-code sign-in
-(`LocalSyncEngine.requestSignIn(email:)` → `Auth.signInWithOTP(email:)`, then
-`verifySignIn(email:code:)` → `Auth.verifyOTP(email:token:type:.email)`),
-exposed in Settings → Sync. The Supabase SDK persists the session in the
-Keychain itself. **Dashboard step required for OTP codes (not magic
-links):** Supabase's default "Magic Link" email template only includes
-`{{ .ConfirmationURL }}` — since this app has the user type a code rather
-than open a link, the project's email template must be edited to include
-`{{ .Token }}` (Supabase Dashboard → Authentication → Email Templates →
-Magic Link), or `requestSignIn` will succeed but the email won't contain a
-typeable code.
-
-**Not yet implemented:**
-- **Conflict resolution**: `attemptSync()` always pushes local state; it
-  doesn't pull remote rows or compare `updated_at` before overwriting.
-  Harmless for a single-device user; a pull path is needed before
-  multi-device last-write-wins is safe.
-- **Soft-delete propagation**: local `deletedAt` isn't wired to a remote
-  delete/tombstone yet — no delete UI exists in the app currently.
-- **RLS verification**: RLS is enabled on all four tables
-  (`profiles`/`tasks`/`focus_sessions`/`user_settings`). An actual
-  cross-user access test (two real signed-in users, confirm A can't read/write
-  B's rows) hasn't been run yet — needs two real accounts.
-- **`public.daily_focus_logs`** was a `SECURITY DEFINER`-style view over
-  this app's own `focus_sessions`, readable by `anon` — a live, quiet
-  exposure of every user's focus data via the app's own embedded key. Fixed
-  by `Supabase/003_close_public_exposure.sql` (written, not yet applied to
-  the live project — pending owner go-ahead). `public.movies` (RLS
-  disabled, exposed to anon) is genuinely unrelated to this app's schema —
-  it came from separate migrations in the same Supabase project — and needs
-  its own owner decision.
-
-The anon/publishable key is meant to be embedded in a client app — Row
-Level Security is the actual authorization boundary, not the key's secrecy.
-It lives in `Core/Supabase.swift` (`SupabaseConfig.anonKey`). A service-role
-key must never be shipped in the macOS bundle or committed anywhere in this
-repo.
+The app is local-only. An optional Supabase sync layer (email-OTP auth,
+outbox drain, RLS schema) was built and later removed: SwiftData on disk is
+the single store and nothing touches the network. `OutboxEntry` remains in
+the schema, unused, so existing databases open without a migration.
 
 ## Testing
 
@@ -204,7 +140,7 @@ flowmodoro -destination 'platform=macOS' -only-testing:flowmodoroTests`
 A Debug-only `-demoData` launch flag (`Core/DemoData.swift`) runs the app on
 an in-memory store seeded with 3 years of Pomodoro sessions across 5 tasks,
 for measuring Statistics-screen cost at a realistic history size without
-touching the real database or ever syncing.
+touching the real database.
 
 Method: `open -n Flowmodora.app --args -demoData`, then `top -l 61 -s 1
 -stats pid,cpu,idlew -pid $PID`, averaged over 60 samples (1/s). Only one
@@ -245,7 +181,7 @@ Append a new entry here whenever a non-obvious technical call is made.
 
 ### SwiftData as local authority
 - Decision: `ModelContainer` + explicit `@Model` types for tasks, sessions,
-  settings, outbox entries.
+  settings.
 - Reason: local-first persistence and schema evolution beat a remote-first
   client database.
 - Alternative: Core Data or a third-party SQLite wrapper.
@@ -280,7 +216,7 @@ Append a new entry here whenever a non-obvious technical call is made.
   happened. The product principle (see `STATUS.md`) is that focus data
   reflects what actually happened, not what the user intended.
 
-### Email OTP code instead of magic link
+### Email OTP code instead of magic link (superseded: sign-in removed)
 - Decision: `signInWithOTP(email:)` + `verifyOTP(email:token:type:)` with a
   typed 6-digit code, not a clickable magic link.
 - Reason: a magic link needs a custom URL scheme and cold-launch/already-
@@ -288,7 +224,7 @@ Append a new entry here whenever a non-obvious technical call is made.
   code needs only a text field.
 - Trade-off: the Supabase project's default email template sends a link,
   not a bare code — the dashboard template needs `{{ .Token }}` added
-  manually (see Sync section above).
+  manually (historical: the sign-in flow has since been removed).
 
 ### One shared clock instead of per-view polling
 - Decision: `TimerEngine` owns one `Task` (`updateTicking()`) ticking once a
@@ -336,7 +272,7 @@ Append a new entry here whenever a non-obvious technical call is made.
   updating `recordSession` in memory keeps the Stop/complete-task click
   path off the full-history SwiftData fetch entirely.
 
-### Optional sync boundary
+### Optional sync boundary (superseded: sync removed)
 - Decision: local persistence and the outbox are usable without Supabase;
   remote sync is a separate transport concern.
 - Reason: focus must never block on authentication, connectivity, or RLS.
@@ -356,7 +292,7 @@ Append a new entry here whenever a non-obvious technical call is made.
   like any other, so the snapshot resets and `roundsCompleted` restarts at 0,
   consistent with "manual Start = fresh run" above.
 
-### Coalesced outbox drains
+### Coalesced outbox drains (superseded: sync removed)
 - Decision: `AppStore.requestSync()` cancels any in-flight debounce chain,
   awaits the previous chain's completion, waits 400ms, then drains once —
   so a burst of rapid saves (e.g. holding a settings stepper) coalesces into
