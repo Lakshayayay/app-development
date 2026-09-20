@@ -31,8 +31,6 @@ SwiftData models are deliberately small:
 - `FocusSessionRecord` — one logical focus session, including actual focused
   duration.
 - `AppSettingsRecord` — user preferences and defaults.
-- `OutboxEntry` — unused. Left over from the removed Supabase sync and kept in
-  the schema only so existing stores keep opening without a migration.
 
 Timer runtime state is a Codable `TimerSnapshot` in `UserDefaults`. This is
 not a second database: it is the small durable recovery record needed to
@@ -114,8 +112,7 @@ sessions.
 
 The app is local-only. An optional Supabase sync layer (email-OTP auth,
 outbox drain, RLS schema) was built and later removed: SwiftData on disk is
-the single store and nothing touches the network. `OutboxEntry` remains in
-the schema, unused, so existing databases open without a migration.
+the single store and nothing touches the network.
 
 ## Testing
 

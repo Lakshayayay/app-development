@@ -8,7 +8,7 @@ struct ContentView: View {
     var body: some View {
         FlowmodoraPopover()
             .environment(store)
-            .frame(width: 360)
+            .frame(width: 380)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -91,7 +91,7 @@ struct FlowmodoraPopover: View {
                     .animation(.smooth(duration: 0.25), value: activeTasks.map(\.id))
                 }
                 .scrollBounceBehavior(.basedOnSize)
-                .frame(minHeight: 78, maxHeight: 182)
+                .frame(minHeight: 106, maxHeight: 250)
                 if !completedTasks.isEmpty {
                     DisclosureGroup("Completed (\(completedTasks.count))") {
                         VStack(spacing: 2) {
@@ -199,7 +199,7 @@ struct TaskRow: View {
             .disabled(task.isCompleted || (store.timer.isActive && !isSelected))
         }
         .padding(.vertical, 2) // was 5: the 22 pt checkbox target keeps the row height the same
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 3)
         .background(isSelected ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isSelected)
     }

@@ -318,6 +318,29 @@ struct FlowmodoTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
+    @Test @MainActor func bellRingsOnBreakStartAndEndButNotForStaleEnd() {
+        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        let engine = TimerEngine(defaults: defaults)
+        var rings = 0
+        engine.onBell = { rings += 1 }
+        let start = Date(timeIntervalSince1970: 9_000)
+        let plan = PomodoroPlan(work: 60, shortBreak: 60, autoStartBreak: true)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start)
+        #expect(rings == 0)                                            // nothing at focus start
+        engine.refresh(at: start.addingTimeInterval(60))               // break starts
+        #expect(rings == 1)
+        engine.refresh(at: start.addingTimeInterval(120))              // break ends on time
+        #expect(rings == 2)
+
+        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start.addingTimeInterval(200))
+        engine.refresh(at: start.addingTimeInterval(260))              // break starts
+        engine.refresh(at: start.addingTimeInterval(320 + 3 * 3_600)) // woke 3 h late: silent
+        #expect(rings == 3)
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
     @Test @MainActor func freshManualStartClearsStaleRoundsCompleted() {
         // Regression: a break that ends without auto-continuing (grace
         // exceeded here) left roundsCompleted on the idle snapshot. A later
@@ -361,7 +384,7 @@ struct FlowmodoTests {
         // Guards AppStore.recordSession's in-memory aggregate update against
         // drifting from the fetch-and-recompute path it replaced.
         let container = try ModelContainer(
-            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self,
+            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let store = AppStore(modelContainer: container)

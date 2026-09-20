@@ -10,7 +10,7 @@ enum DemoData {
 
     static func container() throws -> ModelContainer {
         let container = try ModelContainer(
-            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self,
+            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let context = ModelContext(container)

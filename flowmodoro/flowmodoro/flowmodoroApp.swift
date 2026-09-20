@@ -22,7 +22,7 @@ struct FlowmodoraApp: App {
         #if DEBUG
         if DemoData.isActive { return try DemoData.container() }
         #endif
-        return try ModelContainer(for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self, OutboxEntry.self)
+        return try ModelContainer(for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self)
     }
 
     var body: some Scene {

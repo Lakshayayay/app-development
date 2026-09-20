@@ -164,29 +164,6 @@ final class AppSettingsRecord {
     }
 }
 
-@Model
-final class OutboxEntry {
-    @Attribute(.unique) var id: UUID
-    var entityType: String
-    var entityID: UUID
-    var operation: String
-    var payload: String
-    var createdAt: Date
-    var attemptCount: Int
-    var lastAttemptAt: Date?
-
-    init(entityType: String, entityID: UUID, operation: String, payload: String, now: Date = .now) {
-        self.id = UUID()
-        self.entityType = entityType
-        self.entityID = entityID
-        self.operation = operation
-        self.payload = payload
-        self.createdAt = now
-        self.attemptCount = 0
-        self.lastAttemptAt = nil
-    }
-}
-
 struct FocusSessionValue: Identifiable, Hashable, Sendable {
     let id: UUID
     let taskID: UUID?

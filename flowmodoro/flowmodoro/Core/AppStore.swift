@@ -47,6 +47,7 @@ final class AppStore {
 
         timer = TimerEngine()
         timer.store = self
+        timer.onBell = SoundService.playBell
         reload()
         contextMenu = StatusItemContextMenu(store: self)
         let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
@@ -56,7 +57,12 @@ final class AppStore {
                 else if self.timer.phase == .idle { self.timer.startFocus(taskID: self.settings.selectedTaskID, mode: self.settings.selectedMode) }
             },
             onPause: { [weak self] in self?.timer.pause() },
-            onStop: { [weak self] in self?.timer.stop() }
+            onStop: { [weak self] in self?.timer.stop() },
+            onToggleTimer: {
+                // Same key the right-click menu's Hide/Show Timer writes.
+                let d = UserDefaults.standard
+                d.set(!d.bool(forKey: "hideMenuBarTimer"), forKey: "hideMenuBarTimer")
+            }
         )
         if !hotkeysRegistered {
             alertMessage = "Global shortcuts could not be registered."

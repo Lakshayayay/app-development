@@ -40,6 +40,12 @@ final class NotificationService {
     }
 }
 
+/// Plays directly rather than via UNNotificationSound so the break cue still
+/// lands under a Focus mode — which is exactly when a break ends.
+enum SoundService {
+    static func playBell() { NSSound(named: "Glass")?.play() }
+}
+
 @MainActor
 @Observable
 final class LoginItemService {
@@ -86,9 +92,9 @@ final class GlobalHotkeyService {
     }
 
     @discardableResult
-    func registerDefaultShortcuts(onStart: @escaping () -> Void, onPause: @escaping () -> Void, onStop: @escaping () -> Void) -> Bool {
+    func registerDefaultShortcuts(onStart: @escaping () -> Void, onPause: @escaping () -> Void, onStop: @escaping () -> Void, onToggleTimer: @escaping () -> Void) -> Bool {
         unregister()
-        actions = [1: onStart, 2: onPause, 3: onStop]
+        actions = [1: onStart, 2: onPause, 3: onStop, 4: onToggleTimer]
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let userData = Unmanaged.passUnretained(self).toOpaque()
         guard InstallEventHandler(GetEventDispatcherTarget(), Self.eventHandler, 1, &eventType, userData, &handlerRef) == noErr else {
@@ -97,7 +103,7 @@ final class GlobalHotkeyService {
         }
 
         let modifiers = UInt32(cmdKey | optionKey)
-        let definitions: [(UInt32, UInt32)] = [(1, UInt32(kVK_ANSI_S)), (2, UInt32(kVK_ANSI_P)), (3, UInt32(kVK_ANSI_X))]
+        let definitions: [(UInt32, UInt32)] = [(1, UInt32(kVK_ANSI_S)), (2, UInt32(kVK_ANSI_P)), (3, UInt32(kVK_ANSI_X)), (4, UInt32(kVK_ANSI_H))]
         for (id, keyCode) in definitions {
             var ref: EventHotKeyRef?
             let hotKeyID = EventHotKeyID(signature: Self.signature, id: id)

@@ -89,6 +89,7 @@ struct FlowmodoraTimerView: View {
                     }
                 }
                 .frame(width: 220, height: 220)
+                .scaleEffect(1.02) // visual-only, keeps layout (and popover size) unchanged
                 .contentShape(Circle())
             }
             .buttonStyle(.plain)

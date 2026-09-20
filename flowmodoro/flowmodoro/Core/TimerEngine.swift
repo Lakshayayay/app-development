@@ -12,6 +12,8 @@ enum FlowmodoroMath {
 @Observable
 final class TimerEngine {
     var store: AppStore?
+    /// Injected (AppStore wires SoundService) so the engine stays AppKit-free and tests stay silent.
+    var onBell: () -> Void = {}
     private(set) var snapshot: TimerSnapshot
     /// The clock driving every ticking display (menu-bar label, task row,
     /// timer ring) — updated once a second only while a timer is actually
@@ -216,6 +218,7 @@ final class TimerEngine {
         snapshot.suggestedBreak = nil
         persist()
         scheduleNotificationIfNeeded()
+        if snapshot.mode == .pomodoro { ringBell() }
     }
 
     private func completePomodoroFocus(at date: Date) {
@@ -264,6 +267,10 @@ final class TimerEngine {
             ? TimerSnapshot(mode: mode, taskID: taskID)
             : TimerSnapshot(mode: mode, taskID: taskID, pomodoroCycle: snapshot.pomodoroCycle, roundsCompleted: snapshot.roundsCompleted)
         persist()
+        // Only reached once per break: phase already left .breakTimer above, so a
+        // wake-time refresh right after a tick is a no-op. Stale ends (Mac was
+        // asleep) stay silent, same rule as auto-continue.
+        if now.timeIntervalSince(end) <= Self.autoContinueGrace { ringBell() }
         // Starts at `now`, never backdated to `end`. isAutoContinue tells
         // startFocus to leave roundsCompleted — already carried on
         // `snapshot` above — untouched instead of clearing it before persist.
@@ -284,7 +291,16 @@ final class TimerEngine {
         store?.notificationService.requestAuthorizationIfNeeded()
         let title = snapshot.phase == .breakTimer ? "Break complete" : "Focus interval complete"
         let body = snapshot.phase == .breakTimer ? "Ready to focus again?" : "Start your break."
-        store?.notificationService.scheduleIntervalCompletion(at: Date().addingTimeInterval(remaining), title: title, body: body, sound: store?.settings.soundEnabled ?? true)
+        // The bell already covers a break ending and a Pomodoro focus that
+        // auto-starts its break, so the notification stays silent there (no double ding).
+        let bellCovers = snapshot.phase == .breakTimer
+            || (snapshot.mode == .pomodoro && snapshot.pomodoroPlan?.autoStartBreak == true)
+        store?.notificationService.scheduleIntervalCompletion(at: Date().addingTimeInterval(remaining), title: title, body: body, sound: (store?.settings.soundEnabled ?? true) && !bellCovers)
+    }
+
+    private func ringBell() {
+        guard store?.settings.soundEnabled ?? true else { return }
+        onBell()
     }
 
     private func persist() {
