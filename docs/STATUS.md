@@ -96,6 +96,11 @@ If the answer isn't obviously yes, simplify.
   a single duration when today's and lifetime focused time are equal or
   both (with a tooltip) when they differ, and every pressable control
   (checkbox, row, new-task button, footer) gives spring-press feedback.
+- Every dropdown in the popover (subtask checklists, the Completed
+  section, both new-task fields, the Pomodoro plan card) opens and closes
+  through the same `withExpandCollapse` call, so the dropdown, the rows
+  below it, and the popover's own height all move together instead of
+  the content fading while its neighbors jump to their new position.
 - Every timer control button fires on the first click (full 52pt glass
   circle is hit-testable, not just the glyph) with no perceptible delay
   between press and state change — the popover no longer resizes on

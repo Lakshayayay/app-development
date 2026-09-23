@@ -200,6 +200,40 @@ Append a new entry here whenever a non-obvious technical call is made.
 - Decision: query/mutate `SMAppService.mainApp` rather than a fake boolean.
 - Reason: the UI should reflect actual system registration.
 
+### One shared curve, one shared animation call, one shared clip — for every dropdown
+- Decision (`Features/UI/SpringButtonStyle.swift`): every dropdown in the
+  popover — subtask checklists, the Completed section, both new-task
+  fields, and the Pomodoro plan card, which is the reference for how this
+  should feel — shares three things: `Animation.expandCollapse`
+  (`.smooth(duration: 0.34)`, no bounce), the `withExpandCollapse { }`
+  helper that toggles a dropdown's `@State` inside one explicit
+  `withAnimation`, and `.dropdownClip()` on the container that's actually
+  growing or shrinking (paired with a plain `.opacity` transition on its
+  content).
+- Reason a first attempt at "one shared curve" still looked wrong: giving
+  every site the same `Animation`/`AnyTransition` pair wasn't enough,
+  because each site still triggered its state change with a bare
+  `isExpanded.toggle()` and put `.animation(value:)` only on the
+  dropdown's own subview. That covers the dropdown fading in or out, but
+  not the rows below it, the chevron, or the popover's own height — those
+  jump straight to their new layout while the dropdown is still fading,
+  which reads as the text "floating" above its final position, worse on
+  close than on open. `withExpandCollapse` moves everything affected by
+  the toggle in one animation instead. `.dropdownClip()` matters for the
+  same reason the Pomodoro card already felt right without asking for
+  it: its content sits on a visible tile that grows, so it's naturally
+  uncovered/covered by a moving edge. `.dropdownClip()` gives every other
+  dropdown that same moving edge instead of a `.clipped()` around content
+  that's already full-size the instant it exists.
+- Consequence: the "Completed (n)" section still isn't SwiftUI's native
+  `DisclosureGroup` (which owns its own animation and can't be driven by
+  `withExpandCollapse`) — it's a plain `Button` + chevron + conditional
+  `VStack`, the same pattern the subtask checklist uses. `reduceMotion`
+  environment reads were removed from the individual dropdown views
+  (`PomodoroConfigCard`, `TaskGroup`, `FlowmodoraPopover`'s task section)
+  since `withExpandCollapse` checks `NSWorkspace.accessibilityDisplayShouldReduceMotion`
+  once, centrally, instead of every call site checking its own copy.
+
 ### Calendar attribution
 - Decision: group a session by the local calendar day it started on.
 - Reason: deterministic across midnight, preserves the complete duration.

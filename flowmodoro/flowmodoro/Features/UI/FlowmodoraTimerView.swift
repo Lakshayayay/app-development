@@ -11,15 +11,15 @@ struct FlowmodoraTimerView: View {
         // Stacking a second translucent surface on top of it collapses
         // legibility (apple-design §12). Only the buttons below get their own
         // glass — lighter material drawing attention to what's interactive.
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
             TimerRing()
             if showsConfig {
                 PomodoroConfigCard()
-                    .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
+                    .transition(.expandCollapse)
             }
             controls
         }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: showsConfig)
+        .animation(reduceMotion ? nil : .expandCollapse, value: showsConfig)
     }
 
     private var showsConfig: Bool {
@@ -165,7 +165,7 @@ struct FlowmodoraTimerView: View {
     }
 
     @ViewBuilder private var controls: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             Text("Select a task to begin")
                 .font(.caption)
                 .foregroundStyle(.secondary)

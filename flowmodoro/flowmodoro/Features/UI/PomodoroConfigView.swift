@@ -40,12 +40,11 @@ struct PomodoroConfigFields: View {
 /// glass pane (see FlowmodoraTimerView).
 struct PomodoroConfigCard: View {
     @Environment(AppStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = false
 
     var body: some View {
         VStack(spacing: 8) {
-            Button { isExpanded.toggle() } label: {
+            Button { withExpandCollapse { isExpanded.toggle() } } label: {
                 HStack {
                     Text(summary)
                         .font(.subheadline.monospacedDigit())
@@ -66,12 +65,12 @@ struct PomodoroConfigCard: View {
                 VStack(spacing: 6) { PomodoroConfigFields() }
                     .font(.subheadline)
                     .labeledContentStyle(RowLabeledContentStyle())
-                    .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
+                    .transition(.expandCollapse)
             }
         }
         .padding(10)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isExpanded)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
         .sensoryFeedback(.levelChange, trigger: summary)
     }
 
