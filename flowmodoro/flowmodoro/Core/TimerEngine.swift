@@ -44,8 +44,6 @@ final class TimerEngine {
     var phase: TimerPhase { snapshot.phase }
     var mode: FocusMode { snapshot.mode }
     var isActive: Bool { [.focus, .pausedFocus, .breakTimer, .pausedBreak, .suggestedBreak].contains(phase) }
-    var isFocusRunning: Bool { phase == .focus }
-    var isBreakRunning: Bool { phase == .breakTimer || phase == .pausedBreak }
     var isTicking: Bool { tickTask != nil }
 
     func refresh(at now: Date = .now) {

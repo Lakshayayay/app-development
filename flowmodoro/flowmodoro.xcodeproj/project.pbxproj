@@ -17,19 +17,11 @@
 			remoteGlobalIDString = 2972D0243055BDCE003284CA;
 			remoteInfo = flowmodoro;
 		};
-		2972D0403055BDD0003284CA /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 2972D01D3055BDCE003284CA /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 2972D0243055BDCE003284CA;
-			remoteInfo = flowmodoro;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		2972D0253055BDCE003284CA /* Flowmodora.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flowmodora.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2972D0353055BDD0003284CA /* flowmodoroTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = flowmodoroTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2972D03F3055BDD0003284CA /* flowmodoroUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = flowmodoroUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -56,11 +48,6 @@
 			path = flowmodoroTests;
 			sourceTree = "<group>";
 		};
-		2972D0423055BDD0003284CA /* flowmodoroUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = flowmodoroUITests;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,13 +65,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		2972D03C3055BDD0003284CA /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -93,7 +73,6 @@
 			children = (
 				2972D0273055BDCE003284CA /* flowmodoro */,
 				2972D0383055BDD0003284CA /* flowmodoroTests */,
-				2972D0423055BDD0003284CA /* flowmodoroUITests */,
 				2972D0263055BDCE003284CA /* Products */,
 			);
 			sourceTree = "<group>";
@@ -103,7 +82,6 @@
 			children = (
 				2972D0253055BDCE003284CA /* Flowmodora.app */,
 				2972D0353055BDD0003284CA /* flowmodoroTests.xctest */,
-				2972D03F3055BDD0003284CA /* flowmodoroUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -156,29 +134,6 @@
 			productReference = 2972D0353055BDD0003284CA /* flowmodoroTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		2972D03E3055BDD0003284CA /* flowmodoroUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 2972D0503055BDD0003284CA /* Build configuration list for PBXNativeTarget "flowmodoroUITests" */;
-			buildPhases = (
-				2972D03B3055BDD0003284CA /* Sources */,
-				2972D03C3055BDD0003284CA /* Frameworks */,
-				2972D03D3055BDD0003284CA /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				2972D0413055BDD0003284CA /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				2972D0423055BDD0003284CA /* flowmodoroUITests */,
-			);
-			name = flowmodoroUITests;
-			packageProductDependencies = (
-			);
-			productName = flowmodoroUITests;
-			productReference = 2972D03F3055BDD0003284CA /* flowmodoroUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -193,10 +148,6 @@
 						CreatedOnToolsVersion = 26.6;
 					};
 					2972D0343055BDD0003284CA = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 2972D0243055BDCE003284CA;
-					};
-					2972D03E3055BDD0003284CA = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 2972D0243055BDCE003284CA;
 					};
@@ -218,7 +169,6 @@
 			targets = (
 				2972D0243055BDCE003284CA /* flowmodoro */,
 				2972D0343055BDD0003284CA /* flowmodoroTests */,
-				2972D03E3055BDD0003284CA /* flowmodoroUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -232,13 +182,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		2972D0333055BDD0003284CA /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		2972D03D3055BDD0003284CA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -262,13 +205,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		2972D03B3055BDD0003284CA /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -276,11 +212,6 @@
 			isa = PBXTargetDependency;
 			target = 2972D0243055BDCE003284CA /* flowmodoro */;
 			targetProxy = 2972D0363055BDD0003284CA /* PBXContainerItemProxy */;
-		};
-		2972D0413055BDD0003284CA /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 2972D0243055BDCE003284CA /* flowmodoro */;
-			targetProxy = 2972D0403055BDD0003284CA /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -515,44 +446,6 @@
 			};
 			name = Release;
 		};
-		2972D0513055BDD0003284CA /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = lakshayorg.flowmodoroUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = flowmodoro;
-			};
-			name = Debug;
-		};
-		2972D0523055BDD0003284CA /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = lakshayorg.flowmodoroUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = flowmodoro;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -579,15 +472,6 @@
 			buildConfigurations = (
 				2972D04E3055BDD0003284CA /* Debug */,
 				2972D04F3055BDD0003284CA /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		2972D0503055BDD0003284CA /* Build configuration list for PBXNativeTarget "flowmodoroUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				2972D0513055BDD0003284CA /* Debug */,
-				2972D0523055BDD0003284CA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

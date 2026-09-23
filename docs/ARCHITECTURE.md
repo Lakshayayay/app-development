@@ -55,7 +55,7 @@ dates, or external IDs in v1.
 ### FocusSessionRecord
 One logical focus interval. Paused time is excluded from `focusedDuration`.
 `modeRawValue` stores the stable Codable form of `FocusMode`. The session
-UUID is created before local recording so a remote upload can be idempotent.
+UUID is created before local recording so recording is idempotent.
 
 ### AppSettingsRecord
 Stores user preferences only; it never contains authentication secrets.

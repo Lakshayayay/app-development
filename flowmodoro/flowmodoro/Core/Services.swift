@@ -3,7 +3,6 @@ import Carbon.HIToolbox
 import Foundation
 import ServiceManagement
 @preconcurrency import UserNotifications
-import Observation
 
 @MainActor
 final class NotificationService {
@@ -47,15 +46,12 @@ enum SoundService {
 }
 
 @MainActor
-@Observable
 final class LoginItemService {
-    var isEnabled: Bool {
-        if #available(macOS 13.0, *) { return SMAppService.mainApp.status == .enabled }
-        return false
-    }
+    // The app's deployment target is macOS 26.5, so SMAppService.mainApp is
+    // always available — no #available check needed.
+    var isEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
     func setEnabled(_ enabled: Bool) throws {
-        guard #available(macOS 13.0, *) else { return }
         if enabled {
             try SMAppService.mainApp.register()
         } else {

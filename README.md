@@ -125,7 +125,6 @@ TimerEngine      SwiftData          system services
   screen that actually changed.
 
 **Craft details**
-- A `WidgetExtension` target for a future home-screen widget.
 - A real test suite (`flowmodoroTests`) that runs with zero network
   and zero notification permissions required —
   the timer's timestamp math and statistics calculations are validated in

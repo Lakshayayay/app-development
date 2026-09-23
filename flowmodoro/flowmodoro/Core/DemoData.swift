@@ -4,7 +4,7 @@ import SwiftData
 
 /// `-demoData` launch argument (Debug only): an in-memory store seeded with
 /// three years of sessions, so Statistics can be profiled at a realistic
-/// history size without touching the real database. Sync is off for the run.
+/// history size without touching the real database.
 enum DemoData {
     static let isActive = CommandLine.arguments.contains("-demoData")
 

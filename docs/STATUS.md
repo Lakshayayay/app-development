@@ -117,18 +117,20 @@ If the answer isn't obviously yes, simplify.
 
 ## Not built yet
 
-- **Widget.** `WidgetExtension/` exists but isn't wired into an Xcode
-  target; no App Group entitlement, so it can't share live data with the
-  app yet.
+- **Widget.** Not started — a home-screen widget would need its own
+  extension target and an App Group entitlement to share live data with
+  the app.
 - **Accessibility pass.** No VoiceOver pass done beyond the labels added
   incidentally with recent UI work.
 - **Swift 6 strict concurrency.** Project still builds under `SWIFT_VERSION
   5.0`; migration not started.
-- **UI test automation.** `flowmodoroUITests` is still Xcode boilerplate —
-  the core flows aren't automated, and no GUI-automation path exists yet
-  for driving the `MenuBarExtra` popover from a script (confirmed
-  repeatedly: a status-item click is scriptable via AppleScript/System
-  Events, but the popover it opens exposes no AX window to click inside).
+- **UI test automation.** The core flows aren't automated, and no
+  GUI-automation path exists yet for driving the `MenuBarExtra` popover
+  from a script (confirmed repeatedly: a status-item click is scriptable
+  via AppleScript/System Events, but the popover it opens exposes no AX
+  window to click inside). The empty `flowmodoroUITests` target was
+  removed rather than left as unused boilerplate; a real UI-test target
+  can be added back once that automation path exists.
 
 ## Outstanding work
 
