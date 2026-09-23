@@ -69,9 +69,10 @@ struct StatisticsView: View {
     }
 
     private func taskBars(_ values: [FocusSessionValue]) -> [TaskBar] {
-        let factors = StatisticsEngine.taskFactors(values)
-        var bars = factors.prefix(8).map { TaskBar(name: store.taskTitle(for: $0.taskID), duration: $0.totalFocused) }
-        let other = factors.dropFirst(8).reduce(0) { $0 + $1.totalFocused }
+        // Subtask time is already folded into its domain here.
+        let sorted = StatisticsEngine.domainTotals(values, parentOf: store.parentOf)
+        var bars = sorted.prefix(8).map { TaskBar(name: store.taskTitle(for: $0.taskID), duration: $0.total) }
+        let other = sorted.dropFirst(8).reduce(0) { $0 + $1.total }
         if other > 0 { bars.append(TaskBar(name: "Other", duration: other)) }
         return bars
     }

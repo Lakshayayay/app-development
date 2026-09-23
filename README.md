@@ -52,7 +52,8 @@ No account, no sign-up, no internet connection required.
   rounds) and Flowmodoro (count up, break scales with how long you worked).
 - **A task list, right in the popover** — create tasks, pick one to focus
   on, check them off, and see today's and lifetime totals per task at a
-  glance.
+  glance. Right-click a task to add a checklist of timeable subtasks under
+  it, or to reset just that row's time.
 - **A live menu-bar clock** — the running timer is visible in your menu
   bar at all times, so you never have to open the app to check where you
   stand. Right-click it for quick pause/resume/stop controls without

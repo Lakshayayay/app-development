@@ -59,6 +59,10 @@ Architect cleanly enough that some of these *could* be added later — don't
 implement them now, and don't add a feature just because a competing app
 has it.
 
+**Subtasks are one level deep, on purpose.** A task can have a checklist of
+timeable subtasks; a subtask cannot have its own subtasks, notes, or due
+dates. Nesting further is project-management scope creep — see above.
+
 ### Must-not-change without an explicit product decision
 Local-first behavior, native macOS direction, menu-bar-first UX, Flowmodoro,
 Pomodoro, tasks, history, statistics, SwiftData persistence,
@@ -96,6 +100,12 @@ If the answer isn't obviously yes, simplify.
   a single duration when today's and lifetime focused time are equal or
   both (with a tooltip) when they differ, and every pressable control
   (checkbox, row, new-task button, footer) gives spring-press feedback.
+- Right-click a task for a checklist of timeable subtasks (one level, see
+  Product principles) — a subtask can be selected, timed, and completed
+  exactly like a task, and its focused time rolls up into its domain's
+  total and into Statistics' by-task breakdown. Right-click also offers
+  Reset Time, which zeroes a row's displayed total without touching the
+  underlying sessions (they stay in History/Statistics/the streak).
 - Every dropdown in the popover (subtask checklists, the Completed
   section, both new-task fields, the Pomodoro plan card) opens and closes
   through the same `withExpandCollapse` call, so the dropdown, the rows

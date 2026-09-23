@@ -38,17 +38,6 @@ struct Streak: Sendable, Equatable {
     let best: Int
 }
 
-struct TaskFactor: Identifiable, Sendable, Equatable {
-    let taskID: UUID?
-    let totalFocused: TimeInterval
-    let sessionCount: Int
-    let meanSession: TimeInterval
-    let medianSession: TimeInterval
-    let interruptedCount: Int
-    let lastFocusedAt: Date?
-    var id: UUID? { taskID }
-}
-
 enum StatisticsEngine {
     // Interrupted sessions still represent real focused time (TimerEngine.skip
     // records the actual elapsed duration up to the point of interruption) and
@@ -168,37 +157,38 @@ enum StatisticsEngine {
 
     /// Per-task today/total focused time, cached once per AppStore.reload()
     /// instead of recomputed on every popover render — see AppStore.taskTotals.
-    static func taskTotals(_ sessions: [FocusSessionValue], calendar: Calendar = .current, now: Date = .now) -> [UUID: TaskTotal] {
-        func sum(_ values: [FocusSessionValue]) -> [UUID: TimeInterval] {
-            Dictionary(grouping: values.compactMap { session in session.taskID.map { (session, $0) } }, by: \.1)
-                .mapValues { $0.reduce(0) { $0 + $1.0.focusedDuration } }
+    /// A subtask's sessions also count on its parent's row (`parentOf`), and
+    /// each row only counts sessions since its own Reset Time (`resetAt`) —
+    /// resetting one row never touches another's total.
+    static func taskTotals(
+        _ sessions: [FocusSessionValue], resetAt: [UUID: Date] = [:], parentOf: [UUID: UUID] = [:],
+        calendar: Calendar = .current, now: Date = .now
+    ) -> [UUID: TaskTotal] {
+        let today = calendar.startOfDay(for: now)
+        var sums: [UUID: (today: TimeInterval, total: TimeInterval)] = [:]
+        for session in sessions {
+            guard let taskID = session.taskID else { continue }
+            for owner in [taskID, parentOf[taskID]].compactMap({ $0 })
+            where session.startedAt >= (resetAt[owner] ?? .distantPast) {
+                sums[owner, default: (0, 0)].total += session.focusedDuration
+                if session.startedAt >= today { sums[owner, default: (0, 0)].today += session.focusedDuration }
+            }
         }
-        let todayByTask = sum(filteredSessions(sessions, period: .today, calendar: calendar, now: now))
-        let totalByTask = sum(sessions)
-        var result: [UUID: TaskTotal] = [:]
-        for taskID in Set(todayByTask.keys).union(totalByTask.keys) {
-            result[taskID] = TaskTotal(today: todayByTask[taskID] ?? 0, total: totalByTask[taskID] ?? 0)
-        }
-        return result
+        return sums.mapValues { TaskTotal(today: $0.today, total: $0.total) }
     }
 
-    static func taskFactors(_ sessions: [FocusSessionValue]) -> [TaskFactor] {
-        Dictionary(grouping: sessions, by: \.taskID).map { taskID, group in
-            let durations = group.map(\.focusedDuration).sorted()
-            let total = durations.reduce(0, +)
-            let mid = durations.count / 2
-            let median: TimeInterval = durations.isEmpty ? 0
-                : durations.count.isMultiple(of: 2) ? (durations[mid - 1] + durations[mid]) / 2 : durations[mid]
-            return TaskFactor(
-                taskID: taskID,
-                totalFocused: total,
-                sessionCount: group.count,
-                meanSession: durations.isEmpty ? 0 : total / Double(durations.count),
-                medianSession: median,
-                interruptedCount: group.filter(\.interrupted).count,
-                lastFocusedAt: group.map(\.startedAt).max()
-            )
-        }.sorted { $0.totalFocused > $1.totalFocused }
+    /// Per-domain totals for the Statistics breakdown — a subtask's time is
+    /// folded into its domain (see `parentOf`), sessions with no task are
+    /// dropped, and the result is sorted largest-first for the top-8 +
+    /// "Other" split in StatisticsView.
+    static func domainTotals(_ sessions: [FocusSessionValue], parentOf: [UUID: UUID]) -> [(taskID: UUID, total: TimeInterval)] {
+        var sums: [UUID: TimeInterval] = [:]
+        for session in sessions {
+            guard let taskID = session.taskID else { continue }
+            let owner = parentOf[taskID] ?? taskID
+            sums[owner, default: 0] += session.focusedDuration
+        }
+        return sums.map { (taskID: $0.key, total: $0.value) }.sorted { $0.total > $1.total }
     }
 }
 

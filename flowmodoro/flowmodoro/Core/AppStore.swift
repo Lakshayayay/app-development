@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import SwiftData
 import Observation
-import SwiftUI
 
 @MainActor
 @Observable
@@ -20,15 +19,16 @@ final class AppStore {
     /// StatisticsEngine. The task list and streak/heatmap all read from these.
     private(set) var sessionValues: [FocusSessionValue] = []
     private(set) var taskTitles: [UUID: String] = [:]
+    /// subtaskID -> its top-level task. One level only.
+    private(set) var parentOf: [UUID: UUID] = [:]
+    /// Ready-made subtask lists (oldest first), keyed by parent id, so rows
+    /// don't each filter the full task list on every redraw.
+    private(set) var subtasks: [UUID: [FocusTask]] = [:]
     private(set) var dailyTotals: [Date: TimeInterval] = [:]
     private(set) var taskTotals: [UUID: TaskTotal] = [:]
     private(set) var streak: Streak = Streak(current: 0, best: 0)
     var todayTotal: TimeInterval { dailyTotals[Calendar.current.startOfDay(for: .now)] ?? 0 }
     var alertMessage: String?
-
-    private var contextMenu: StatusItemContextMenu?
-    private var wakeObserver: NSObjectProtocol?
-    private var dayChangeObserver: NSObjectProtocol?
 
     init(modelContainer: ModelContainer) {
         modelContext = ModelContext(modelContainer)
@@ -93,7 +93,14 @@ final class AppStore {
         do {
             tasks = try modelContext.fetch(FetchDescriptor<FocusTask>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
                 .filter { $0.deletedAt == nil }
-            taskTitles = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
+            parentOf = Dictionary(uniqueKeysWithValues: tasks.compactMap { task in task.parentID.map { (task.id, $0) } })
+            subtasks = Dictionary(grouping: tasks.filter { $0.parentID != nil }, by: { $0.parentID! })
+                .mapValues { $0.sorted { $0.createdAt < $1.createdAt } }
+            let titleByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
+            taskTitles = Dictionary(uniqueKeysWithValues: tasks.map { task -> (UUID, String) in
+                guard let parentID = task.parentID, let parentTitle = titleByID[parentID] else { return (task.id, task.title) }
+                return (task.id, "\(parentTitle) › \(task.title)")
+            })
         } catch {
             alertMessage = "Unable to read local focus data."
         }
@@ -111,22 +118,41 @@ final class AppStore {
     }
 
     private func recomputeAggregates() {
+        let resetAt = Dictionary(uniqueKeysWithValues: tasks.compactMap { task in task.timeResetAt.map { (task.id, $0) } })
         dailyTotals = StatisticsEngine.dailyTotals(sessionValues)
-        taskTotals = StatisticsEngine.taskTotals(sessionValues)
+        taskTotals = StatisticsEngine.taskTotals(sessionValues, resetAt: resetAt, parentOf: parentOf)
         streak = StatisticsEngine.streak(dailyTotals, goal: settings.dailyFocusGoal)
     }
 
     @discardableResult
-    func createTask(title: String) -> FocusTask? {
+    func createTask(title: String, parentID: UUID? = nil) -> FocusTask? {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let task = FocusTask(title: trimmed)
+        let task = FocusTask(title: trimmed, parentID: parentID)
         modelContext.insert(task)
-        settings.selectedTaskID = task.id
-        settings.updatedAt = .now
+        // Don't steal the selection out from under a running timer.
+        if !timer.isActive {
+            settings.selectedTaskID = task.id
+            settings.updatedAt = .now
+        }
         save()
         reloadTasks()
         return task
+    }
+
+    /// True while the running (or paused) timer belongs to this task or one
+    /// of its subtasks — used to keep a row's live time, the stop-on-complete
+    /// rule, and Reset Time in sync with what's actually being timed.
+    func isTiming(_ task: FocusTask) -> Bool {
+        guard timer.phase == .focus || timer.phase == .pausedFocus, let runningID = timer.snapshot.taskID else { return false }
+        return runningID == task.id || parentOf[runningID] == task.id
+    }
+
+    func resetTime(_ task: FocusTask) {
+        task.timeResetAt = .now
+        task.updatedAt = .now
+        save()
+        recomputeAggregates()
     }
 
     func selectTask(_ task: FocusTask) {
@@ -137,16 +163,18 @@ final class AppStore {
 
     func toggleTask(_ task: FocusTask) {
         let completing = !task.isCompleted
-        // Completing the running task's own session first, so its focused
-        // time is actually recorded rather than discarded.
-        if completing, timer.snapshot.taskID == task.id, timer.phase == .focus || timer.phase == .pausedFocus {
+        // Completing the task (or its running subtask's domain) first, so
+        // the focused time is actually recorded rather than discarded.
+        if completing, isTiming(task) {
             timer.stop()
         }
         task.isCompleted.toggle()
         task.completedAt = task.isCompleted ? .now : nil
         task.updatedAt = .now
         if completing, settings.selectedTaskID == task.id {
-            settings.selectedTaskID = nil
+            // Falls back to the parent domain (nil for a top-level task), so
+            // completing a subtask leaves its domain selected and ready to go.
+            settings.selectedTaskID = task.parentID
             settings.updatedAt = .now
         }
         save()

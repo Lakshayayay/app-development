@@ -52,6 +52,12 @@ history, statistics, and settings.
 soft-delete timestamp. There are intentionally no tags, projects, notes, due
 dates, or external IDs in v1.
 
+Two more fields support one level of subtasks: `parentID` (set = this row is
+a subtask of that row; a subtask's own `parentID` is never followed further —
+see docs/STATUS.md's Product principles) and `timeResetAt` (see "Reset Time"
+in the Decisions log below). Both are `nil` by default, so existing rows
+need no migration.
+
 ### FocusSessionRecord
 One logical focus interval. Paused time is excluded from `focusedDuration`.
 `modeRawValue` stores the stable Codable form of `FocusMode`. The session
@@ -199,6 +205,19 @@ Append a new entry here whenever a non-obvious technical call is made.
 ### Launch at Login
 - Decision: query/mutate `SMAppService.mainApp` rather than a fake boolean.
 - Reason: the UI should reflect actual system registration.
+
+### Reset Time hides sessions, never deletes them
+- Decision: right-clicking a task's row and choosing "Reset Time" sets
+  `FocusTask.timeResetAt = .now`; `StatisticsEngine.taskTotals` then only
+  sums sessions started at or after that date for that row.
+- Reason: a session is a durable fact of when focus actually happened (see
+  "Focus data reflects what actually happened" in docs/STATUS.md); History,
+  Statistics, the streak, and the daily-goal total must keep reflecting it.
+  Reset only changes what one row's own counter displays.
+- Consequence: each task's (or subtask's) reset is independent — resetting
+  a subtask never changes its domain's total, and resetting a domain never
+  clears its subtasks, because `taskTotals` re-sums from the underlying
+  sessions per owner rather than mutating a stored total.
 
 ### One shared curve, one shared animation call, one shared clip — for every dropdown
 - Decision (`Features/UI/SpringButtonStyle.swift`): every dropdown in the

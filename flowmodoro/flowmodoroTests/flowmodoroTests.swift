@@ -13,8 +13,8 @@ struct FlowmodoTests {
     }
 
     @Test @MainActor func flowmodoroTimerAccumulatesOnlyFocusedTime() {
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let taskID = UUID()
         let start = Date(timeIntervalSince1970: 1_000)
@@ -25,12 +25,11 @@ struct FlowmodoTests {
         #expect(engine.focusDuration(at: start.addingTimeInterval(300)) == 25)
         engine.resume(now: start.addingTimeInterval(300))
         #expect(engine.focusDuration(at: start.addingTimeInterval(330)) == 55)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func pomodoroCountdownUsesTargetDateAndPauseRecovery() {
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 2_000)
 
@@ -40,7 +39,6 @@ struct FlowmodoTests {
         #expect(engine.countdownRemaining(at: start.addingTimeInterval(3_600)) == 24 * 60)
         engine.resume(now: start.addingTimeInterval(3_600))
         #expect(engine.countdownRemaining(at: start.addingTimeInterval(3_660)) == 23 * 60)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test func statisticsSummaryAndCalendarGrouping() {
@@ -65,37 +63,32 @@ struct FlowmodoTests {
         #expect(StatisticsEngine.dailyFocus(values, period: .total, calendar: calendar).count == 2)
     }
 
-    @Test func taskFactorsComputeFactualAggregates() {
-        // No weighting, no composite score — every field here must be a
-        // plain sum/count/average traceable to the underlying sessions.
+    @Test func domainTotalsFoldSubtasksAndSort() {
+        // No weighting, no composite score — every total here must be a
+        // plain sum traceable to the underlying sessions.
         let taskA = UUID()
         let taskB = UUID()
+        let subOfA = UUID()
         let day = Date(timeIntervalSince1970: 1_700_000_000)
         let values = [
             makeSession(duration: 60, startedAt: day, taskID: taskA),
             makeSession(duration: 120, startedAt: day.addingTimeInterval(60), taskID: taskA),
-            makeSession(duration: 30, startedAt: day.addingTimeInterval(120), taskID: taskA, interrupted: true),
+            makeSession(duration: 30, startedAt: day.addingTimeInterval(120), taskID: subOfA, interrupted: true),
             makeSession(duration: 300, startedAt: day.addingTimeInterval(180), taskID: taskB),
+            makeSession(duration: 10, startedAt: day.addingTimeInterval(240), taskID: nil), // no task: excluded
         ]
 
-        let factors = StatisticsEngine.taskFactors(values)
-        #expect(factors.count == 2)
+        let totals = StatisticsEngine.domainTotals(values, parentOf: [subOfA: taskA])
+        #expect(totals.count == 2)
 
-        let factorA = factors.first { $0.taskID == taskA }
-        #expect(factorA?.totalFocused == 210)
-        #expect(factorA?.sessionCount == 3)
-        #expect(factorA?.meanSession == 70)
-        #expect(factorA?.medianSession == 60)
-        #expect(factorA?.interruptedCount == 1)
-        #expect(factorA?.lastFocusedAt == day.addingTimeInterval(120))
-
-        let factorB = factors.first { $0.taskID == taskB }
-        #expect(factorB?.totalFocused == 300)
-        #expect(factorB?.sessionCount == 1)
-        #expect(factorB?.interruptedCount == 0)
+        // taskA's own sessions plus its subtask's, folded into one total.
+        let expectedATotal: TimeInterval = 60 + 120 + 30
+        #expect(totals.first { $0.taskID == taskA }?.total == expectedATotal)
+        let expectedBTotal: TimeInterval = 300
+        #expect(totals.first { $0.taskID == taskB }?.total == expectedBTotal)
 
         // Sorted by total focused time, descending.
-        #expect(factors.first?.taskID == taskB)
+        #expect(totals.first?.taskID == taskB)
     }
 
     @Test func dailyFocusZeroFillsQuietDays() {
@@ -115,8 +108,8 @@ struct FlowmodoTests {
         // The timer must reconstruct correct state from timestamps even if
         // refresh() wasn't called while the Mac was asleep — it must not
         // matter that no poll happened between countdownEnd and now.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 3_000)
 
@@ -129,7 +122,6 @@ struct FlowmodoTests {
         let wakeTime = start.addingTimeInterval(25 * 60 + 90)
         engine.refresh(at: wakeTime)
         #expect(engine.phase == .suggestedBreak || engine.phase == .breakTimer)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test func formatDurationTimerStyleStaysSubtle() {
@@ -158,13 +150,43 @@ struct FlowmodoTests {
         #expect(totals[taskA]?.total == 900)
     }
 
+    @Test func taskTotalsRollUpSubtasksAndHonorReset() {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = Date(timeIntervalSince1970: 1_700_000_000)
+        let yesterday = today.addingTimeInterval(-86_400)
+        let parent = UUID()
+        let child = UUID()
+        let resetAt = today.addingTimeInterval(-3_600) // between yesterday's and today's child session
+        let values = [
+            makeSession(duration: 500, startedAt: yesterday, taskID: parent),
+            makeSession(duration: 200, startedAt: yesterday, taskID: child), // before child's own reset: excluded from child
+            makeSession(duration: 300, startedAt: today, taskID: child),
+        ]
+
+        let totals = StatisticsEngine.taskTotals(
+            values, resetAt: [child: resetAt], parentOf: [child: parent], calendar: calendar, now: today
+        )
+
+        // The child only counts sessions since its own Reset Time.
+        let childTotal: TimeInterval = 300
+        #expect(totals[child]?.total == childTotal)
+        #expect(totals[child]?.today == childTotal)
+        // The parent counts its own sessions plus ALL of the child's
+        // (including the one hidden from the child's own row) — resetting a
+        // subtask never touches its domain's total.
+        let parentTotal: TimeInterval = 500 + 200 + 300
+        #expect(totals[parent]?.total == parentTotal)
+        let parentToday: TimeInterval = 300
+        #expect(totals[parent]?.today == parentToday)
+    }
+
     @Test @MainActor func flowmodoroBreakStoresPlannedDurationForRingProgress() {
         // Regression: startBreak() previously left snapshot.plannedDuration
         // at whatever the prior focus interval set it to (nil, for
         // Flowmodoro), so the break ring's progress fraction collapsed to
         // remaining / remaining == 1 — always full for the whole break.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 4_000)
 
@@ -176,7 +198,6 @@ struct FlowmodoTests {
         #expect(engine.phase == .breakTimer)
         #expect(engine.snapshot.plannedDuration == 60)
         #expect(engine.countdownRemaining(at: start.addingTimeInterval(300)) == 60)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test func streakCountsGoalDaysAndTodayInProgressDoesNotBreakIt() {
@@ -216,8 +237,8 @@ struct FlowmodoTests {
         // The shared clock (TimerEngine.now) must tick only while a timer is
         // actually running — idle/paused/suggested-break must stay silent so
         // the app is App Nap-eligible whenever nothing is counting.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 5_000)
 
@@ -230,7 +251,6 @@ struct FlowmodoTests {
         #expect(engine.isTicking)
         engine.stop(now: start.addingTimeInterval(30))
         #expect(!engine.isTicking)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func snapshotSavedBeforeRoundsStillDecodes() throws {
@@ -245,8 +265,8 @@ struct FlowmodoTests {
     }
 
     @Test @MainActor func startFreezesClampedPlan() {
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 6_000)
 
@@ -254,12 +274,11 @@ struct FlowmodoTests {
         #expect(engine.snapshot.pomodoroPlan?.work == 60) // 0 would complete, and record, every tick
         #expect(engine.snapshot.pomodoroPlan?.rounds == 24)
         #expect(engine.countdownRemaining(at: start) == 60)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func roundsLimitEndsRunAfterLastBreak() {
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 7_000)
         let plan = PomodoroPlan(work: 60, shortBreak: 60, longBreak: 60, rounds: 2, autoStartBreak: true, autoStartFocus: true)
@@ -275,7 +294,6 @@ struct FlowmodoTests {
         engine.refresh(at: start.addingTimeInterval(240))  // last break ends → run over
         #expect(engine.phase == .idle)
         #expect(engine.snapshot.roundsCompleted == nil)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func autoContinuePersistsRoundsCompleted() throws {
@@ -284,8 +302,8 @@ struct FlowmodoTests {
         // restore ran, so a crash/relaunch during round 2+ of an
         // auto-continued run read back roundsCompleted == nil. Assert the
         // *persisted* snapshot (not just the live engine) carries the count.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 7_500)
         let plan = PomodoroPlan(work: 60, shortBreak: 60, longBreak: 60, rounds: 3, autoStartBreak: true, autoStartFocus: true)
@@ -299,15 +317,14 @@ struct FlowmodoTests {
         let data = try #require(defaults.data(forKey: TimerEngine.snapshotKey))
         let persisted = try JSONDecoder().decode(TimerSnapshot.self, from: data)
         #expect(persisted.roundsCompleted == 1)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func lateBreakEndDoesNotAutoStartFocus() {
         // Regression: after sleeping through a break with auto-continue on, the
         // tick loop chained break → backdated focus → completed focus → …,
         // recording 25-minute sessions nobody worked.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 8_000)
 
@@ -315,12 +332,11 @@ struct FlowmodoTests {
         engine.refresh(at: start.addingTimeInterval(60))               // → break ending at +120
         engine.refresh(at: start.addingTimeInterval(120 + 3 * 3_600))  // Mac woke 3 h later
         #expect(engine.phase == .idle)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func bellRingsOnBreakStartAndEndButNotForStaleEnd() {
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         var rings = 0
         engine.onBell = { rings += 1 }
@@ -338,7 +354,6 @@ struct FlowmodoTests {
         engine.refresh(at: start.addingTimeInterval(260))              // break starts
         engine.refresh(at: start.addingTimeInterval(320 + 3 * 3_600)) // woke 3 h late: silent
         #expect(rings == 3)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test @MainActor func freshManualStartClearsStaleRoundsCompleted() {
@@ -346,8 +361,8 @@ struct FlowmodoTests {
         // exceeded here) left roundsCompleted on the idle snapshot. A later
         // *manual* Start must not inherit it — rounds=4 after 2 rounds this
         // morning should give 4 fresh rounds this afternoon, not 2 more.
-        let suiteName = "flowmodo.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
         let engine = TimerEngine(defaults: defaults)
         let start = Date(timeIntervalSince1970: 9_000)
         let taskID = UUID()
@@ -365,7 +380,6 @@ struct FlowmodoTests {
         let afternoon = start.addingTimeInterval(180 + 60 + 4 * 3_600)
         engine.startFocus(taskID: taskID, mode: .pomodoro, plan: plan, now: afternoon)
         #expect(engine.snapshot.roundsCompleted == nil) // fresh manual Start must not inherit it
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     @Test func heatmapCellIndexIsWeekTimesSevenPlusWeekday() {
@@ -383,11 +397,9 @@ struct FlowmodoTests {
     @Test @MainActor func recordSessionMatchesFullReload() throws {
         // Guards AppStore.recordSession's in-memory aggregate update against
         // drifting from the fetch-and-recompute path it replaced.
-        let container = try ModelContainer(
-            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        let store = AppStore(modelContainer: container)
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
         let taskID = UUID()
         let start = Date(timeIntervalSince1970: 8_000)
 
@@ -403,6 +415,26 @@ struct FlowmodoTests {
         #expect(store.sessionValues == incrementalSessionValues)
         #expect(store.taskTotals == incrementalTaskTotals)
         #expect(store.todayTotal == incrementalTodayTotal)
+    }
+
+    private func inMemoryContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+    }
+
+    /// A UserDefaults suite for one test, named after the test rather than a
+    /// fresh UUID: macOS writes an empty .plist into the app's container for
+    /// every suite ever used (asynchronously, so deleting it races cfprefsd),
+    /// and UUID names piled up 120+ of them. Stable names cap it at one small
+    /// file per test. Emptied before use too, so a crashed run can't leak
+    /// state into the next one.
+    private func scratchDefaults(_ name: String = #function) -> (UserDefaults, cleanup: () -> Void) {
+        let suite = "flowmodo.tests." + name.replacingOccurrences(of: "()", with: "")
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        return (defaults, { defaults.removePersistentDomain(forName: suite) })
     }
 
     private func makeSession(duration: TimeInterval, startedAt: Date, taskID: UUID? = nil, interrupted: Bool = false) -> FocusSessionValue {

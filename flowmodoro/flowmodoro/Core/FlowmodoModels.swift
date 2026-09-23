@@ -47,8 +47,17 @@ final class FocusTask {
     var completedAt: Date?
     var updatedAt: Date
     var deletedAt: Date?
+    // Inline defaults so lightweight migration fills existing rows.
+    /// Set = this task is a subtask of that task. One level only — a subtask
+    /// with its own parentID set would be project-management scope creep
+    /// (see docs/STATUS.md's "permanently out of scope").
+    var parentID: UUID? = nil
+    /// The row's today/total time only counts sessions started at or after
+    /// this date. Sessions themselves are never touched — see "Reset Time"
+    /// in docs/ARCHITECTURE.md's Decisions log.
+    var timeResetAt: Date? = nil
 
-    init(title: String, now: Date = .now) {
+    init(title: String, parentID: UUID? = nil, now: Date = .now) {
         self.id = UUID()
         self.title = title
         self.isCompleted = false
@@ -56,6 +65,8 @@ final class FocusTask {
         self.updatedAt = now
         self.completedAt = nil
         self.deletedAt = nil
+        self.parentID = parentID
+        self.timeResetAt = nil
     }
 }
 

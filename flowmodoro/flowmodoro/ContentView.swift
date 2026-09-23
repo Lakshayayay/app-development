@@ -1,5 +1,4 @@
 import AppKit
-import Charts
 import SwiftUI
 
 struct ContentView: View {
@@ -8,7 +7,7 @@ struct ContentView: View {
     var body: some View {
         FlowmodoraPopover()
             .environment(store)
-            .frame(width: 380)
+            .frame(width: 396)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -17,6 +16,7 @@ struct FlowmodoraPopover: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openWindow) private var openWindow
     @State private var showingNewTask = false
+    @State private var completedExpanded = false
 
     /// openWindow(id:) alone shows the window but never brings it forward:
     /// Flowmodora is LSUIElement (no Dock icon), and an accessory app isn't
@@ -70,7 +70,7 @@ struct FlowmodoraPopover: View {
             HStack {
                 Text("TASKS").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Button { showingNewTask = true } label: {
+                Button { withExpandCollapse { showingNewTask = true } } label: {
                     Image(systemName: "plus")
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
@@ -78,43 +78,67 @@ struct FlowmodoraPopover: View {
                 .springButtonStyle()
                 .help("New task")
             }
-            let activeTasks = store.tasks.filter { !$0.isCompleted }
-            let completedTasks = store.tasks.filter(\.isCompleted)
+            // Only top-level tasks (domains) list directly; subtasks render
+            // inside their domain's TaskGroup.
+            let activeTasks = store.tasks.filter { !$0.isCompleted && $0.parentID == nil }
+            let completedTasks = store.tasks.filter { $0.isCompleted && $0.parentID == nil }
             if activeTasks.isEmpty && completedTasks.isEmpty {
-                Button("Create your first task") { showingNewTask = true }
+                Button("Create your first task") { withExpandCollapse { showingNewTask = true } }
                     .buttonStyle(.bordered)
             } else {
                 ScrollView {
                     VStack(spacing: 2) {
-                        ForEach(activeTasks) { task in TaskRow(task: task) }
+                        ForEach(activeTasks) { task in TaskGroup(task: task) }
                     }
-                    .animation(.smooth(duration: 0.25), value: activeTasks.map(\.id))
+                    .animation(.expandCollapse, value: activeTasks.map(\.id))
                 }
                 .scrollBounceBehavior(.basedOnSize)
                 .frame(minHeight: 106, maxHeight: 250)
                 if !completedTasks.isEmpty {
-                    DisclosureGroup("Completed (\(completedTasks.count))") {
-                        VStack(spacing: 2) {
-                            ForEach(completedTasks) { task in TaskRow(task: task) }
+                    // A custom disclosure, not the native DisclosureGroup, so its
+                    // open/close matches every other dropdown's curve exactly
+                    // (see Animation.expandCollapse).
+                    VStack(alignment: .leading, spacing: 4) {
+                        Button { withExpandCollapse { completedExpanded.toggle() } } label: {
+                            HStack(spacing: 4) {
+                                Text("Completed (\(completedTasks.count))")
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2.weight(.semibold))
+                                    .rotationEffect(.degrees(completedExpanded ? 90 : 0))
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if completedExpanded {
+                            VStack(spacing: 2) {
+                                ForEach(completedTasks) { task in TaskGroup(task: task) }
+                            }
+                            .transition(.expandCollapse)
                         }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .dropdownClip()
                 }
             }
         }
         if showingNewTask {
             // createTask already selects the new task — see AppStore.createTask.
-            NewTaskInlineView(showingNewTask: $showingNewTask) { title in
-                store.createTask(title: title)
+            VStack(spacing: 0) {
+                NewTaskInlineView(showingNewTask: $showingNewTask) { title in
+                    store.createTask(title: title)
+                }
             }
+            .dropdownClip()
+            .transition(.expandCollapse)
         }
     }
 
     private var timerSection: some View {
         FlowmodoraTimerView()
             .frame(maxWidth: .infinity)
-            .padding(.top, 4)
+            .padding(.top, 14)
     }
 
     private var footer: some View {
@@ -153,19 +177,65 @@ struct FlowmodoraPopover: View {
     }
 }
 
+/// A top-level task (domain) plus its collapsible checklist of subtasks.
+/// Subtasks are plain FocusTasks with `parentID` set — see AppStore.subtasks.
+struct TaskGroup: View {
+    @Environment(AppStore.self) private var store
+    let task: FocusTask
+    @State private var isExpanded = false
+    @State private var addingSubtask = false
+
+    private var children: [FocusTask] { store.subtasks[task.id] ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            TaskRow(task: task, isExpanded: $isExpanded, onAddSubtask: {
+                withExpandCollapse {
+                    addingSubtask = true
+                    isExpanded = true
+                }
+            })
+            if isExpanded {
+                VStack(spacing: 2) {
+                    ForEach(children) { child in
+                        TaskRow(task: child, isExpanded: .constant(false), onAddSubtask: nil)
+                            .padding(.leading, 30)
+                    }
+                    if addingSubtask {
+                        NewTaskInlineView(showingNewTask: $addingSubtask, prompt: "Add a subtask…", keepsOpen: true) { title in
+                            withExpandCollapse { store.createTask(title: title, parentID: task.id) }
+                        }
+                        .padding(.leading, 30)
+                    }
+                }
+                .transition(.expandCollapse)
+            }
+        }
+        .dropdownClip()
+    }
+}
+
 /// Selectable, completable row shown in the popover's inline task list —
 /// checkbox to complete, title, and today/total focused time (adding the
-/// running task's live elapsed time on top of AppStore's cached totals).
+/// running task's or subtask's live elapsed time on top of AppStore's cached
+/// totals). Used for both top-level tasks (domains) and subtasks.
 struct TaskRow: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let task: FocusTask
+    /// Only meaningful (and shown) for a top-level task with subtasks.
+    @Binding var isExpanded: Bool
+    /// Set only for a top-level task's own row — nil for a subtask row.
+    var onAddSubtask: (() -> Void)?
 
     private var isSelected: Bool { store.settings.selectedTaskID == task.id }
+    private var isTiming: Bool { store.isTiming(task) }
     private var liveElapsed: TimeInterval {
-        guard isSelected, store.timer.phase == .focus || store.timer.phase == .pausedFocus else { return 0 }
+        guard isTiming else { return 0 }
         return store.timer.focusDuration(at: store.timer.now)
     }
+    private var subtaskCount: Int { store.subtasks[task.id]?.count ?? 0 }
+    private var isDomain: Bool { task.parentID == nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -186,6 +256,11 @@ struct TaskRow: View {
                         .strikethrough(task.isCompleted)
                         .foregroundStyle(task.isCompleted ? .secondary : .primary)
                         .lineLimit(1)
+                    if isDomain && subtaskCount > 0 {
+                        Text("\(completedSubtaskCount)/\(subtaskCount)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer(minLength: 8)
                     Text(timeLabel)
                         .font(.caption.monospacedDigit())
@@ -197,11 +272,37 @@ struct TaskRow: View {
             .springButtonStyle()
             // Same rule the old tap-gesture guard enforced.
             .disabled(task.isCompleted || (store.timer.isActive && !isSelected))
+
+            // Reserved slot on every row so the time column stays aligned;
+            // only a domain with subtasks gets a visible, hit-testable chevron.
+            Button { withExpandCollapse { isExpanded.toggle() } } label: {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: 16, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(isDomain && subtaskCount > 0 ? 1 : 0)
+            .disabled(!(isDomain && subtaskCount > 0))
+            .accessibilityHidden(!(isDomain && subtaskCount > 0))
         }
         .padding(.vertical, 2) // was 5: the 22 pt checkbox target keeps the row height the same
         .padding(.horizontal, 3)
         .background(isSelected ? Color.secondary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isSelected)
+        .contextMenu {
+            if let onAddSubtask {
+                Button("Add Subtask") { onAddSubtask() }
+            }
+            Button("Reset Time") { store.resetTime(task) }
+                .disabled(isTiming || (store.taskTotals[task.id]?.total ?? 0) <= 0)
+        }
+    }
+
+    private var completedSubtaskCount: Int {
+        (store.subtasks[task.id] ?? []).filter(\.isCompleted).count
     }
 
     private var formattedToday: String {
@@ -273,11 +374,9 @@ struct SettingsView: View {
                         range: 5 * 60...8 * 60 * 60, step: 5 * 60
                     )
                 }
-            }
         }
         .formStyle(.grouped).padding().navigationTitle("Settings").frame(width: 520, height: 620)
     }
-}
 
 struct DurationStepper: View {
     @Binding var value: TimeInterval
@@ -288,25 +387,38 @@ struct DurationStepper: View {
 
 struct NewTaskInlineView: View {
     @Binding var showingNewTask: Bool
+    var prompt = "What are you focusing on?"
+    /// Subtasks only: Enter adds and clears the field instead of closing it,
+    /// so a whole checklist can be typed in one go. Esc still closes it.
+    var keepsOpen = false
     let onSave: (String) -> Void
     @State private var title = ""
+    @FocusState private var isFocused: Bool
 
     var body: some View {
         HStack {
-            TextField("What are you focusing on?", text: $title)
+            TextField(prompt, text: $title)
                 .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
                 .onSubmit(save)
-            Button("Cancel") { showingNewTask = false }.buttonStyle(.plain).font(.caption)
+            Button("Cancel") { withExpandCollapse { showingNewTask = false } }.buttonStyle(.plain).font(.caption)
             Button("Create") { save() }
                 .buttonStyle(.borderedProminent)
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.top, 8)
+        .onExitCommand { withExpandCollapse { showingNewTask = false } }
+        .task { isFocused = true }
     }
 
     private func save() {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         onSave(title)
-        showingNewTask = false
+        if keepsOpen {
+            title = ""
+            isFocused = true
+        } else {
+            withExpandCollapse { showingNewTask = false }
+        }
     }
 }
