@@ -42,3 +42,6 @@ flowmodoro/test.swift
 
 # Superpowers SDD scratch workspace (ledgers, briefs, review packages)
 .superpowers/
+
+# Flowmodora data backups (personal data, never commit)
+Flowmodora-*.json

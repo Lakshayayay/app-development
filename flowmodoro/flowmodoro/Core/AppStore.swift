@@ -30,8 +30,28 @@ final class AppStore {
     var todayTotal: TimeInterval { dailyTotals[Calendar.current.startOfDay(for: .now)] ?? 0 }
     var alertMessage: String?
 
-    init(modelContainer: ModelContainer) {
+    private let backups: Backups
+    private(set) var backupFolderName: String?
+    private(set) var lastBackupAt: Date?
+    private(set) var backupError: String?
+    private var backupScheduled = false
+    /// Set by a failed restore: automatic backups pause until a restore
+    /// succeeds, so a half-restored store can't overwrite a good backup file.
+    private var backupsHeld = false
+
+    private var contextMenu: StatusItemContextMenu?
+    private var wakeObserver: NSObjectProtocol?
+    private var dayChangeObserver: NSObjectProtocol?
+
+    /// `defaults` holds the running-timer snapshot and the backup folder.
+    /// Deliberately required: tests and `-demoData` pass their own suite, so
+    /// they can never read the real timer or write fake data into the real
+    /// backup folder.
+    init(modelContainer: ModelContainer, defaults: UserDefaults) {
         modelContext = ModelContext(modelContainer)
+        backups = Backups(defaults: defaults)
+        backupFolderName = backups.folderURL?.lastPathComponent
+        lastBackupAt = backups.lastBackupAt
         notificationService = NotificationService()
         loginItemService = LoginItemService()
         hotkeyService = GlobalHotkeyService()
@@ -45,7 +65,7 @@ final class AppStore {
             try? modelContext.save()
         }
 
-        timer = TimerEngine()
+        timer = TimerEngine(defaults: defaults)
         timer.store = self
         timer.onBell = SoundService.playBell
         reload()
@@ -253,8 +273,89 @@ final class AppStore {
     private func save() {
         do {
             try modelContext.save()
+            scheduleBackup()
         } catch {
             alertMessage = AppError.couldNotSave.localizedDescription
         }
+    }
+
+    // MARK: - Backups
+
+    var backupFolderURL: URL? { backups.folderURL }
+
+    func makeBackup() -> BackupFile {
+        BackupFile(
+            exportedAt: .now,
+            tasks: tasks.map(BackupFile.TaskEntry.init),
+            sessions: sessions.map(BackupFile.SessionEntry.init),
+            settings: BackupFile.SettingsEntry(settings)
+        )
+    }
+
+    func chooseBackupFolder(_ url: URL) {
+        do {
+            try backups.setFolder(url)
+            backupFolderName = url.lastPathComponent
+            backUpNow()
+        } catch {
+            backupError = "Couldn't use that folder: \(error.localizedDescription)"
+        }
+    }
+
+    /// No-op until a folder has been chosen. An automatic backup failing
+    /// never interrupts focus; it shows up in Settings instead.
+    func backUpNow() {
+        do {
+            guard try backups.write(makeBackup()) != nil else { return }
+            lastBackupAt = backups.lastBackupAt
+            backupError = nil
+        } catch {
+            backupError = "Last backup failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Coalesces every save in one event (Stop records a session *and*
+    /// completes a task) into a single write, run after the click has
+    /// rendered so it never adds latency to it. The main queue is serial, so
+    /// writes land in order.
+    // ponytail: rewrites the whole file on every change — fine for years of
+    // personal history; write incrementally if it ever shows up in a profile.
+    private func scheduleBackup() {
+        guard !backupScheduled, !backupsHeld else { return }
+        backupScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            backupScheduled = false
+            backUpNow()
+        }
+    }
+
+    /// Replaces every task, session and setting with the backup's. The
+    /// delete is saved on its own first, so re-inserting the same IDs can't
+    /// collide with rows still pending deletion. Both saves bypass `save()`,
+    /// so nothing is backed up from a half-restored state.
+    func restore(_ file: BackupFile) throws {
+        guard !timer.isActive else { throw BackupError.timerRunning }
+        do {
+            try modelContext.delete(model: FocusTask.self)
+            try modelContext.delete(model: FocusSessionRecord.self)
+            try modelContext.save()
+            file.tasks.forEach { modelContext.insert($0.makeModel()) }
+            file.sessions.forEach { modelContext.insert($0.makeModel()) }
+            file.settings.apply(to: settings)
+            try modelContext.save()
+        } catch {
+            // Discard the half-applied restore and hold automatic backups, so
+            // whatever this left behind can't overwrite a good backup file —
+            // possibly the very one being restored. Retrying clears the hold.
+            modelContext.rollback()
+            backupsHeld = true
+            reload()
+            throw error
+        }
+        backupsHeld = false
+        reload()
+        timer.reset()
+        scheduleBackup()
     }
 }

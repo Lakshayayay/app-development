@@ -120,6 +120,39 @@ The app is local-only. An optional Supabase sync layer (email-OTP auth,
 outbox drain, RLS schema) was built and later removed: SwiftData on disk is
 the single store and nothing touches the network.
 
+## Backups
+
+`Core/Backup.swift`. SwiftData stays the single source of truth; a backup
+is a copy of it, never a second store the app reads from.
+
+- **Format.** `BackupFile`: a `version`, `exportedAt`, and plain Codable
+  copies of every live `FocusTask`, `FocusSessionRecord`, and the settings
+  (all but Launch at Login, which belongs to each Mac). Pretty-printed with
+  sorted keys; dates are ISO 8601 with milliseconds. Fields added later must
+  be Optional so older files still decode — the `TimerSnapshot` rule.
+- **Where.** One file per day, `Flowmodora-YYYY-MM-DD.json`, in a folder the
+  user picks in Settings (iCloud Drive suggested, so it survives a reset of
+  the Mac). The app is sandboxed (`ENABLE_USER_SELECTED_FILES = readwrite`),
+  so a security-scoped bookmark in `UserDefaults` keeps access across
+  launches. The newest 14 files are kept; pruning only ever touches files
+  matching that exact name pattern.
+- **When.** `AppStore.save()` is the one choke point every change goes
+  through, so it schedules a backup there: one `DispatchQueue.main.async`
+  write, after the click has rendered, with a pending flag that folds every
+  save from one event into a single write. No timer, no polling. No folder
+  chosen = no-op. An automatic backup that fails shows in Settings rather
+  than interrupting focus.
+- **Restore.** Refused while a timer is running. Deletes every task and
+  session (saved on its own, so re-inserted IDs can't collide with rows
+  pending deletion), inserts the file's rows with their original IDs, applies
+  its settings, reloads. If any step fails it rolls back and holds automatic
+  backups until a restore succeeds, so a half-restored store can't overwrite
+  a good backup file.
+- **Isolation.** `AppStore(modelContainer:defaults:)` takes its defaults
+  explicitly (timer snapshot + backup folder live there). Tests and
+  `-demoData` pass their own suite, so they can never write fake data into
+  the real backup folder or touch the real running timer.
+
 ## Testing
 
 Unit tests cover timer mathematics and statistics without a network or a
@@ -205,6 +238,20 @@ Append a new entry here whenever a non-obvious technical call is made.
 ### Launch at Login
 - Decision: query/mutate `SMAppService.mainApp` rather than a fake boolean.
 - Reason: the UI should reflect actual system registration.
+
+### Backups are a JSON file in a folder the user picks
+- Decision: automatic, daily-rotated JSON backups written to a user-chosen
+  folder (see "Backups" above), restored from Settings.
+- Reason: the data lived only on the laptop's internal disk with no Time
+  Machine configured, so resetting the Mac would lose everything. A file in
+  iCloud Drive survives that with no account, no server and no network code,
+  so the app stays local-first. Readable JSON also diffs cleanly if the
+  folder is ever kept in a (separate, private) git repo.
+- Alternatives: re-adding Supabase (removed on purpose; brings back sign-in,
+  network dependency and conflicts, and free projects pause when idle) or
+  SwiftData + CloudKit (true multi-Mac sync, but needs a paid developer team
+  and dropping `@Attribute(.unique)` from all three models) — the natural
+  upgrade if live sync is ever wanted.
 
 ### Reset Time hides sessions, never deletes them
 - Decision: right-clicking a task's row and choosing "Reset Time" sets

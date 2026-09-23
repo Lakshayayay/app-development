@@ -67,7 +67,11 @@ No account, no sign-up, no internet connection required.
 - **Gentle nudges** — optional notifications and sounds when an interval
   ends, launch-at-login, and light/dark/system appearance, all in Settings.
 - **Your data, your machine** — everything above works fully offline,
-  and nothing ever leaves your Mac.
+  and nothing ever leaves your Mac unless you choose a backup folder.
+- **Automatic backups** — pick a folder once (iCloud Drive is suggested)
+  and Flowmodora saves a readable JSON copy of your tasks, sessions and
+  settings after every change, keeping the last 14 days. Restore it from
+  Settings after a reset or on a new Mac.
 
 ## Under the hood
 

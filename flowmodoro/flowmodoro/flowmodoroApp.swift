@@ -13,9 +13,18 @@ struct FlowmodoraApp: App {
         } catch {
             fatalError("Flowmodora could not create its local database: \(error)")
         }
-        let applicationStore = AppStore(modelContainer: container)
+        let applicationStore = AppStore(modelContainer: container, defaults: Self.makeDefaults())
         modelContainer = container
         _store = State(wrappedValue: applicationStore)
+    }
+
+    /// Demo data gets its own defaults, so a `-demoData` run never touches
+    /// the real timer snapshot or writes into the real backup folder.
+    private static func makeDefaults() -> UserDefaults {
+        #if DEBUG
+        if DemoData.isActive { return UserDefaults(suiteName: "flowmodo.demo")! }
+        #endif
+        return .standard
     }
 
     private static func makeContainer() throws -> ModelContainer {
@@ -54,7 +63,7 @@ struct FlowmodoraApp: App {
             SettingsView().environment(store)
                 .preferredColorScheme(preferredColorScheme)
         }
-        .defaultSize(width: 540, height: 660)
+        .defaultSize(width: 540, height: 800)
     }
 
     private var preferredColorScheme: ColorScheme? {

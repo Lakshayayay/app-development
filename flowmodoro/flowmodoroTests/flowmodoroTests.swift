@@ -417,6 +417,41 @@ struct FlowmodoTests {
         #expect(store.todayTotal == incrementalTodayTotal)
     }
 
+    @Test @MainActor func backupRoundTripRestoresEverything() throws {
+        // Everything that matters survives makeBackup → JSON → restore, so a
+        // model field that's added but forgotten in BackupFile fails here.
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let source = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let domain = try #require(source.createTask(title: "AI engineering"))
+        let subtask = try #require(source.createTask(title: "Read paper", parentID: domain.id))
+        let done = try #require(source.createTask(title: "DSA"))
+        source.toggleTask(done)
+        source.resetTime(subtask)
+        let start = Date(timeIntervalSince1970: 8_000)
+        source.recordSession(id: UUID(), taskID: subtask.id, mode: .pomodoro, startedAt: start, endedAt: start.addingTimeInterval(1_500), focusedDuration: 1_500, plannedDuration: 1_500, completed: true)
+        source.recordSession(id: UUID(), taskID: domain.id, mode: .flowmodoro, startedAt: start.addingTimeInterval(2_000), endedAt: start.addingTimeInterval(2_600), focusedDuration: 600, plannedDuration: nil, breakDuration: 120, completed: true)
+        source.settings.dailyFocusGoal = 2 * 3_600
+        source.updateSettings()
+
+        let data = try Backups.encoder().encode(source.makeBackup())
+        let file = try Backups.decoder().decode(BackupFile.self, from: data)
+
+        let (restoredDefaults, restoredCleanup) = scratchDefaults(#function + "Restored")
+        defer { restoredCleanup() }
+        let restored = AppStore(modelContainer: try inMemoryContainer(), defaults: restoredDefaults)
+        try restored.restore(file)
+
+        #expect(Set(restored.tasks.map(\.id)) == Set(source.tasks.map(\.id)))
+        let restoredSubtask = try #require(restored.tasks.first { $0.id == subtask.id })
+        #expect(restoredSubtask.parentID == domain.id)
+        #expect(restoredSubtask.timeResetAt != nil)
+        #expect(restored.tasks.first { $0.id == done.id }?.isCompleted == true)
+        #expect(restored.sessionValues == source.sessionValues)
+        #expect(restored.taskTotals == source.taskTotals)
+        #expect(restored.settings.dailyFocusGoal == source.settings.dailyFocusGoal)
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         try ModelContainer(
             for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(AppStore.self) private var store
@@ -374,9 +375,70 @@ struct SettingsView: View {
                         range: 5 * 60...8 * 60 * 60, step: 5 * 60
                     )
                 }
+            }
+            Section {
+                LabeledContent("Folder") {
+                    HStack(spacing: 8) {
+                        Text(store.backupFolderName ?? "Not chosen").foregroundStyle(.secondary)
+                        Button("Choose…", action: chooseBackupFolder)
+                    }
+                }
+                // A plain string, not Text(date, style: .relative): that one
+                // re-renders every second while Settings is open.
+                LabeledContent("Last backup", value: store.lastBackupAt?.formatted(.relative(presentation: .named)) ?? "Never")
+                if let error = store.backupError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                HStack {
+                    Button("Back Up Now") { store.backUpNow() }
+                        .disabled(store.backupFolderName == nil)
+                    Spacer()
+                    Button("Restore from Backup…", action: restoreFromBackup)
+                        .disabled(store.timer.isActive)
+                        .help(store.timer.isActive ? "Stop the timer before restoring." : "")
+                }
+            } header: {
+                Text("Backup")
+            } footer: {
+                Text("Saved after every change. A folder in iCloud Drive keeps your history if this Mac is reset.")
+            }
         }
-        .formStyle(.grouped).padding().navigationTitle("Settings").frame(width: 520, height: 620)
+        .formStyle(.grouped).padding().navigationTitle("Settings").frame(width: 520, height: 760)
     }
+
+    private func chooseBackupFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Use This Folder"
+        panel.message = "Choose where Flowmodora keeps its backups. A folder in iCloud Drive survives a reset of this Mac."
+        panel.directoryURL = store.backupFolderURL ?? Backups.iCloudDriveURL
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        store.chooseBackupFolder(url)
+    }
+
+    private func restoreFromBackup() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.prompt = "Restore"
+        panel.directoryURL = store.backupFolderURL
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let file = try Backups.read(from: url)
+            let alert = NSAlert()
+            alert.messageText = "Restore this backup?"
+            alert.informativeText = "This replaces all tasks, sessions and settings with the backup from \(file.exportedAt.formatted(date: .abbreviated, time: .shortened)): \(file.tasks.count) tasks and \(file.sessions.count) sessions."
+            alert.addButton(withTitle: "Restore")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            try store.restore(file)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+}
 
 struct DurationStepper: View {
     @Binding var value: TimeInterval

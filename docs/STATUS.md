@@ -127,6 +127,10 @@ If the answer isn't obviously yes, simplify.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
 - App identity: name, icon, accent color, cleaned `Info.plist`.
 - Notifications, launch-at-login, light/dark/system appearance.
+- Automatic backups: after every change, a readable JSON copy of all
+  tasks, sessions and settings goes to a folder chosen in Settings (iCloud
+  Drive suggested), one file per day, last 14 kept; Back Up Now and Restore
+  from Backup in Settings. Tests and `-demoData` can't write to it.
 - Sleep/wake, settings, streak, ticker-lifecycle, and Pomodoro-plan/rounds
   test coverage in `flowmodoroTests`.
 
