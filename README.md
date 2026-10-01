@@ -32,19 +32,61 @@ even if you close the popover, sleep your laptop, or quit the app entirely
 It's also **local-first**: every task, session, and stat lives on your Mac.
 No account, no sign-up, no internet connection required.
 
-## What it looks like
+## A quick tour
+
+From the first click to a year of history — every screen below is the real app.
+
+**1. Click the menu bar icon.** Your tasks, a timer ring and today's total
+appear right where you are. Pick a task, choose Flowmodoro or Pomodoro in the
+corner, and you're ready.
 
 <p align="center">
-  <img src="flowmodoro/pics/popover-timer.jpg" width="700" alt="Flowmodora's popover, showing the task list, the focus timer ring, and today's total"/>
+  <img src="docs/journey/01-popover.png" width="340" alt="The popover: task list, idle timer ring and play button"/>
 </p>
 
-<p align="center"><i>Click the menu bar icon and this is what greets you — your tasks, a live timer ring, and today's total, without ever leaving your current window.</i></p>
+**2. Right-click a task.** Add a subtask, reset just that row's time, or
+delete it. Delete always asks first, and the hours you already focused stay
+in your history.
 
 <p align="center">
-  <img src="flowmodoro/pics/statistics.jpg" width="700" alt="Flowmodora's statistics window, showing focus time, session count, longest session, and a breakdown by task"/>
+  <img src="docs/journey/02-right-click.png" width="340" alt="Right-click menu on a task: Add Subtask, Reset Time, Delete Task"/>
 </p>
 
-<p align="center"><i>A proper statistics window for when you want the bigger picture: focus time, session count, streaks, and a breakdown by task, over a week, month, year, or all time.</i></p>
+**3. Break big tasks into a checklist.** Subtasks are timeable too — their
+time rolls up into the task above.
+
+<p align="center">
+  <img src="docs/journey/03-subtasks.png" width="340" alt="Thesis expanded to show two subtasks, one selected"/>
+</p>
+
+**4. Press play.** Flowmodoro counts up while you work, and the same time
+ticks on the task row and in the menu bar.
+
+<p align="center">
+  <img src="docs/journey/04-focus.png" width="340" alt="A running focus session with pause and stop buttons"/>
+</p>
+
+**5. Stop when you naturally stop.** Your break is worked out from how long
+you actually focused — start it, or skip it.
+
+<p align="center">
+  <img src="docs/journey/05-break.png" width="340" alt="Break ready: a suggested break with start and dismiss buttons"/>
+</p>
+
+**6. See where your hours went.** Today's ring, your streak, a year-long
+heatmap (hover a day for its total), and charts by week, month, year or
+all time.
+
+<p align="center">
+  <img src="docs/journey/06-statistics.png" width="700" alt="The statistics window with the Past year heatmap and a weekly bar chart"/>
+</p>
+
+**7. Make it yours — and back it up.** Tune the timers, pick a daily goal, and
+point Flowmodora at a folder (iCloud Drive works well) for automatic backups.
+
+<p align="center">
+  <img src="docs/journey/07-settings-backup.png" width="420" alt="Settings: focus options and the Backup section"/>
+</p>
 
 ## Features
 
@@ -53,7 +95,7 @@ No account, no sign-up, no internet connection required.
 - **A task list, right in the popover** — create tasks, pick one to focus
   on, check them off, and see today's and lifetime totals per task at a
   glance. Right-click a task to add a checklist of timeable subtasks under
-  it, or to reset just that row's time.
+  it, reset just that row's time, or delete it.
 - **A live menu-bar clock** — the running timer is visible in your menu
   bar at all times, so you never have to open the app to check where you
   stand. Right-click it for quick pause/resume/stop controls without
@@ -62,8 +104,8 @@ No account, no sign-up, no internet connection required.
   closing the popover doesn't lose your place. The timer is reconstructed
   from real timestamps, not a countdown that resets.
 - **Real statistics** — today, this week, this month, this year, or all
-  time, plus a per-task breakdown and a focus streak, computed entirely on
-  your device.
+  time, plus a per-task breakdown, a focus streak and a year-long heatmap,
+  computed entirely on your device.
 - **Gentle nudges** — optional notifications and sounds when an interval
   ends, launch-at-login, and light/dark/system appearance, all in Settings.
 - **Your data, your machine** — everything above works fully offline,
