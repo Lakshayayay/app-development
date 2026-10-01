@@ -14,6 +14,10 @@ final class AppStore {
 
     private(set) var settings: AppSettingsRecord
     private(set) var tasks: [FocusTask] = []
+    /// Every task row including soft-deleted ones. Titles and parent links
+    /// come from here so a deleted task's recorded sessions keep their name
+    /// and stay folded under their domain; `tasks` is the live subset.
+    private var allTasks: [FocusTask] = []
     private(set) var sessions: [FocusSessionRecord] = []
     /// Cached once per reload() instead of remapped on every render — see
     /// StatisticsEngine. The task list and streak/heatmap all read from these.
@@ -111,13 +115,13 @@ final class AppStore {
 
     private func reloadTasks() {
         do {
-            tasks = try modelContext.fetch(FetchDescriptor<FocusTask>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
-                .filter { $0.deletedAt == nil }
-            parentOf = Dictionary(uniqueKeysWithValues: tasks.compactMap { task in task.parentID.map { (task.id, $0) } })
+            allTasks = try modelContext.fetch(FetchDescriptor<FocusTask>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)]))
+            tasks = allTasks.filter { $0.deletedAt == nil }
+            parentOf = Dictionary(uniqueKeysWithValues: allTasks.compactMap { task in task.parentID.map { (task.id, $0) } })
             subtasks = Dictionary(grouping: tasks.filter { $0.parentID != nil }, by: { $0.parentID! })
                 .mapValues { $0.sorted { $0.createdAt < $1.createdAt } }
-            let titleByID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0.title) })
-            taskTitles = Dictionary(uniqueKeysWithValues: tasks.map { task -> (UUID, String) in
+            let titleByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0.title) })
+            taskTitles = Dictionary(uniqueKeysWithValues: allTasks.map { task -> (UUID, String) in
                 guard let parentID = task.parentID, let parentTitle = titleByID[parentID] else { return (task.id, task.title) }
                 return (task.id, "\(parentTitle) › \(task.title)")
             })
@@ -173,6 +177,32 @@ final class AppStore {
         task.updatedAt = .now
         save()
         recomputeAggregates()
+    }
+
+    /// False while the running (or paused) timer — focus or break — belongs to
+    /// this task or one of its subtasks; same rule Reset Time follows.
+    func canDelete(_ task: FocusTask) -> Bool {
+        guard timer.isActive, let runningID = timer.snapshot.taskID else { return true }
+        return runningID != task.id && parentOf[runningID] != task.id
+    }
+
+    /// Soft delete: hides the task (and, for a domain, its subtasks) from the
+    /// list. Sessions are never touched — see "Delete hides a task, never its
+    /// sessions" in docs/ARCHITECTURE.md.
+    func deleteTask(_ task: FocusTask) {
+        guard canDelete(task) else { return }
+        let now = Date.now
+        for doomed in [task] + (subtasks[task.id] ?? []) {
+            doomed.deletedAt = now
+            doomed.updatedAt = now
+        }
+        if let selected = settings.selectedTaskID, selected == task.id || parentOf[selected] == task.id {
+            // Same fallback as completing a task: a subtask's domain, else nothing.
+            settings.selectedTaskID = task.parentID
+            settings.updatedAt = now
+        }
+        save()
+        reloadTasks()
     }
 
     func selectTask(_ task: FocusTask) {
@@ -286,7 +316,7 @@ final class AppStore {
     func makeBackup() -> BackupFile {
         BackupFile(
             exportedAt: .now,
-            tasks: tasks.map(BackupFile.TaskEntry.init),
+            tasks: allTasks.map(BackupFile.TaskEntry.init),
             sessions: sessions.map(BackupFile.SessionEntry.init),
             settings: BackupFile.SettingsEntry(settings)
         )

@@ -426,7 +426,9 @@ struct FlowmodoTests {
         let domain = try #require(source.createTask(title: "AI engineering"))
         let subtask = try #require(source.createTask(title: "Read paper", parentID: domain.id))
         let done = try #require(source.createTask(title: "DSA"))
+        let gone = try #require(source.createTask(title: "Old project"))
         source.toggleTask(done)
+        source.deleteTask(gone)
         source.resetTime(subtask)
         let start = Date(timeIntervalSince1970: 8_000)
         source.recordSession(id: UUID(), taskID: subtask.id, mode: .pomodoro, startedAt: start, endedAt: start.addingTimeInterval(1_500), focusedDuration: 1_500, plannedDuration: 1_500, completed: true)
@@ -447,9 +449,56 @@ struct FlowmodoTests {
         #expect(restoredSubtask.parentID == domain.id)
         #expect(restoredSubtask.timeResetAt != nil)
         #expect(restored.tasks.first { $0.id == done.id }?.isCompleted == true)
+        #expect(!restored.tasks.contains { $0.id == gone.id })
+        #expect(restored.taskTitle(for: gone.id) == "Old project") // deletion survives the round trip
         #expect(restored.sessionValues == source.sessionValues)
         #expect(restored.taskTotals == source.taskTotals)
         #expect(restored.settings.dailyFocusGoal == source.settings.dailyFocusGoal)
+    }
+
+    @Test @MainActor func deleteTaskHidesTaskKeepsSessions() throws {
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let domain = try #require(store.createTask(title: "Domain"))
+        let sub = try #require(store.createTask(title: "Sub", parentID: domain.id))
+        let other = try #require(store.createTask(title: "Other"))
+        let start = Date(timeIntervalSince1970: 8_000)
+        store.recordSession(id: UUID(), taskID: sub.id, mode: .flowmodoro, startedAt: start, endedAt: start.addingTimeInterval(600), focusedDuration: 600, plannedDuration: nil, completed: true)
+        let sessionsBefore = store.sessionValues
+
+        // A subtask goes alone; selection falls back to its domain.
+        store.selectTask(sub)
+        store.deleteTask(sub)
+        #expect(store.subtasks[domain.id] == nil)
+        #expect(store.tasks.contains { $0.id == domain.id })
+        #expect(store.settings.selectedTaskID == domain.id)
+
+        // A domain takes its subtasks with it; selection clears.
+        let sub2 = try #require(store.createTask(title: "Sub 2", parentID: domain.id))
+        store.selectTask(sub2)
+        store.deleteTask(domain)
+        #expect(Set(store.tasks.map(\.id)) == [other.id])
+        #expect(store.subtasks[domain.id] == nil)
+        #expect(store.settings.selectedTaskID == nil)
+
+        // Recorded time and titles are untouched.
+        #expect(store.sessionValues == sessionsBefore)
+        #expect(store.taskTitle(for: sub.id) == "Domain › Sub")
+        #expect(StatisticsEngine.domainTotals(store.sessionValues, parentOf: store.parentOf).first?.taskID == domain.id)
+    }
+
+    @Test @MainActor func deleteIsBlockedWhileTimerOwnsTask() throws {
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let domain = try #require(store.createTask(title: "Domain"))
+        let sub = try #require(store.createTask(title: "Sub", parentID: domain.id))
+        store.timer.startFocus(taskID: sub.id, mode: .flowmodoro)
+        #expect(!store.canDelete(sub))
+        #expect(!store.canDelete(domain))
+        store.deleteTask(domain)
+        #expect(store.tasks.contains { $0.id == domain.id })
     }
 
     private func inMemoryContainer() throws -> ModelContainer {

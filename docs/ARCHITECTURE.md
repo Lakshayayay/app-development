@@ -253,6 +253,21 @@ Append a new entry here whenever a non-obvious technical call is made.
   and dropping `@Attribute(.unique)` from all three models) — the natural
   upgrade if live sync is ever wanted.
 
+### Delete hides a task, never its sessions
+- Decision: right-click → "Delete Task" / "Delete Subtask" (after a
+  confirmation) sets `FocusTask.deletedAt` on the task and, for a domain,
+  all its subtasks. Sessions are never touched. Delete is disabled while the
+  running or paused timer (focus or break) belongs to that task.
+- Reason: same principle as Reset Time below — a session is a durable fact
+  of when focus happened, so History, Statistics, Today and the streak keep
+  counting it. `AppStore` builds `taskTitles` and `parentOf` from *all* task
+  rows (`allTasks`), so a deleted task's sessions keep their title and stay
+  folded under their domain; only `tasks`/`subtasks` (the visible list) skip
+  deleted rows. If the deleted task was selected, selection falls back to its
+  domain (nil for a domain), like completing it does.
+- Consequence: backups now carry `deletedAt` (Optional, so older files
+  decode) so titles still resolve after a restore. No UI to undelete.
+
 ### Reset Time hides sessions, never deletes them
 - Decision: right-clicking a task's row and choosing "Reset Time" sets
   `FocusTask.timeResetAt = .now`; `StatisticsEngine.taskTotals` then only

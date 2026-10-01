@@ -3,7 +3,8 @@ import Foundation
 /// A portable, human-readable copy of everything Flowmodora stores, written
 /// as JSON to a folder the user picked (see `Backups`). Plain value copies of
 /// the SwiftData models, so the file format never depends on SwiftData.
-/// Only live rows are included — nothing is soft-deleted in practice.
+/// Tasks keep their soft-delete stamp, so a deleted task's sessions still
+/// resolve to its title after a restore.
 struct BackupFile: Codable {
     static let currentVersion = 1
 
@@ -24,6 +25,7 @@ struct BackupFile: Codable {
         var updatedAt: Date
         var parentID: UUID?
         var timeResetAt: Date?
+        var deletedAt: Date?
     }
 
     struct SessionEntry: Codable {
@@ -68,7 +70,7 @@ extension BackupFile.TaskEntry {
         self.init(
             id: task.id, title: task.title, isCompleted: task.isCompleted,
             createdAt: task.createdAt, completedAt: task.completedAt, updatedAt: task.updatedAt,
-            parentID: task.parentID, timeResetAt: task.timeResetAt
+            parentID: task.parentID, timeResetAt: task.timeResetAt, deletedAt: task.deletedAt
         )
     }
 
@@ -79,6 +81,7 @@ extension BackupFile.TaskEntry {
         task.completedAt = completedAt
         task.updatedAt = updatedAt
         task.timeResetAt = timeResetAt
+        task.deletedAt = deletedAt
         return task
     }
 }

@@ -223,6 +223,7 @@ struct TaskGroup: View {
 struct TaskRow: View {
     @Environment(AppStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var confirmingDelete = false
     let task: FocusTask
     /// Only meaningful (and shown) for a top-level task with subtasks.
     @Binding var isExpanded: Bool
@@ -299,7 +300,24 @@ struct TaskRow: View {
             }
             Button("Reset Time") { store.resetTime(task) }
                 .disabled(isTiming || (store.taskTotals[task.id]?.total ?? 0) <= 0)
+            Divider()
+            // Plain, not .destructive: keeps the menu in the app's quiet palette.
+            // The confirmation dialog is the safeguard.
+            Button(isDomain ? "Delete Task" : "Delete Subtask", systemImage: "trash") { confirmingDelete = true }
+                .disabled(!store.canDelete(task))
         }
+        .confirmationDialog("Delete \"\(task.title)\"?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete") { withExpandCollapse { store.deleteTask(task) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteMessage)
+        }
+    }
+
+    private var deleteMessage: String {
+        let kept = "Focus time already recorded stays in History and Statistics."
+        guard subtaskCount > 0 else { return kept }
+        return "Its \(subtaskCount) subtask\(subtaskCount == 1 ? " is" : "s are") deleted too. \(kept)"
     }
 
     private var completedSubtaskCount: Int {
