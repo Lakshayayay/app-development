@@ -326,19 +326,20 @@ struct TaskRow: View {
     private var deleteConfirmation: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(deleteQuestion)
-                .font(.caption.weight(.medium))
+                .font(.subheadline.weight(.medium))
                 .lineLimit(2)
             HStack {
                 Text("Logged time stays in History.")
-                    .font(.caption)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Button("Cancel") { withExpandCollapse { confirmingDelete = false } }
                     .buttonStyle(.plain)
-                    .font(.caption)
+                    .font(.subheadline)
                 Button("Delete") { withExpandCollapse { store.deleteTask(task) } }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .font(.callout) // the small control's 11 pt label, +10%
                     .disabled(!store.canDelete(task))
             }
         }
