@@ -267,6 +267,11 @@ Append a new entry here whenever a non-obvious technical call is made.
   domain (nil for a domain), like completing it does.
 - Consequence: backups now carry `deletedAt` (Optional, so older files
   decode) so titles still resolve after a restore. No UI to undelete.
+- The confirmation is an inline strip under the row, not a
+  `.confirmationDialog`: a dialog is its own window, and a `MenuBarExtra`
+  window closes as soon as another window takes focus, so the popover
+  vanished behind it. Anything modal shown from the popover has the same
+  problem.
 
 ### Reset Time hides sessions, never deletes them
 - Decision: right-clicking a task's row and choosing "Reset Time" sets

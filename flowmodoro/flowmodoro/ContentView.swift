@@ -240,6 +240,16 @@ struct TaskRow: View {
     private var isDomain: Bool { task.parentID == nil }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row
+            if confirmingDelete {
+                deleteConfirmation.transition(.expandCollapse)
+            }
+        }
+        .dropdownClip()
+    }
+
+    private var row: some View {
         HStack(spacing: 8) {
             Button { store.toggleTask(task) } label: {
                 Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
@@ -302,22 +312,43 @@ struct TaskRow: View {
                 .disabled(isTiming || (store.taskTotals[task.id]?.total ?? 0) <= 0)
             Divider()
             // Plain, not .destructive: keeps the menu in the app's quiet palette.
-            // The confirmation dialog is the safeguard.
-            Button(isDomain ? "Delete Task" : "Delete Subtask", systemImage: "trash") { confirmingDelete = true }
-                .disabled(!store.canDelete(task))
-        }
-        .confirmationDialog("Delete \"\(task.title)\"?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete") { withExpandCollapse { store.deleteTask(task) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(deleteMessage)
+            // The inline confirmation below is the safeguard.
+            Button(isDomain ? "Delete Task" : "Delete Subtask", systemImage: "trash") {
+                withExpandCollapse { confirmingDelete = true }
+            }
+            .disabled(!store.canDelete(task))
         }
     }
 
-    private var deleteMessage: String {
-        let kept = "Focus time already recorded stays in History and Statistics."
-        guard subtaskCount > 0 else { return kept }
-        return "Its \(subtaskCount) subtask\(subtaskCount == 1 ? " is" : "s are") deleted too. \(kept)"
+    /// Inline, not .confirmationDialog: a dialog is its own window, and a
+    /// MenuBarExtra window closes the moment another window takes focus —
+    /// so the popover vanished behind the dialog.
+    private var deleteConfirmation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(deleteQuestion)
+                .font(.caption.weight(.medium))
+                .lineLimit(2)
+            HStack {
+                Text("Logged time stays in History.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button("Cancel") { withExpandCollapse { confirmingDelete = false } }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                Button("Delete") { withExpandCollapse { store.deleteTask(task) } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!store.canDelete(task))
+            }
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var deleteQuestion: String {
+        guard subtaskCount > 0 else { return "Delete “\(task.title)”?" }
+        return "Delete “\(task.title)” and its \(subtaskCount) subtask\(subtaskCount == 1 ? "" : "s")?"
     }
 
     private var completedSubtaskCount: Int {
