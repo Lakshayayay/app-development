@@ -501,6 +501,17 @@ struct FlowmodoTests {
         #expect(store.tasks.contains { $0.id == domain.id })
     }
 
+    @Test func heatmapMonthLabelsMarkEachMonthStart() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let cells = HeatmapCell.pastYear([:], calendar: calendar, now: now)
+        let weeks = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
+        let labelled = weeks.compactMap { HeatmapCell.monthLabel(for: $0, calendar: calendar) }
+        let firsts = cells.filter { calendar.component(.day, from: $0.date) == 1 }.count
+        #expect(labelled.count == firsts)
+        #expect(labelled.allSatisfy { calendar.shortMonthSymbols.contains($0) })
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         try ModelContainer(
             for: FocusTask.self, FocusSessionRecord.self, AppSettingsRecord.self,

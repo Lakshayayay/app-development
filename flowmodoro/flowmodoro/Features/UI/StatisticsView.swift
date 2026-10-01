@@ -197,59 +197,152 @@ struct HeatmapCell: Identifiable, Equatable {
     }
 }
 
+extension HeatmapCell {
+    /// Short month name for a week column that contains a month's 1st, else nil.
+    static func monthLabel(for week: [HeatmapCell], calendar: Calendar = .current) -> String? {
+        guard let first = week.first(where: { calendar.component(.day, from: $0.date) == 1 }) else { return nil }
+        return calendar.shortMonthSymbols[calendar.component(.month, from: first.date) - 1]
+    }
+}
+
 private struct HeatmapSection: View {
     let cells: [HeatmapCell]
     let goal: TimeInterval
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered: HeatmapCell?
+    @State private var hasAppeared = false
+
+    private static let gap: CGFloat = 3
+    private static let labelWidth: CGFloat = 30
+    /// The one opacity ramp: every cell and the legend read from it, so the
+    /// color theme (the app's accent) can't drift between them.
+    private static let levels: [Double] = [0.08, 0.3, 0.55, 0.8, 1.0]
 
     var body: some View {
+        let weeks = stride(from: 0, to: cells.count, by: 7).map { Array(cells[$0..<min($0 + 7, cells.count)]) }
+        let today = Calendar.current.startOfDay(for: .now)
+        let total = cells.reduce(0) { $0 + $1.duration }
         VStack(alignment: .leading, spacing: 8) {
-            Text("Past year").font(.headline)
-            Chart(cells) { cell in
-                RectangleMark(x: .value("Week", cell.weekIndex), y: .value("Weekday", 6 - cell.weekday))
-                    .foregroundStyle(Color.accentColor.opacity(level(cell.duration)))
-                    .cornerRadius(3)
+            HStack {
+                Text("Past year").font(.headline)
+                Spacer()
+                Text("\(formatDuration(total)) focused").font(.caption).foregroundStyle(.secondary)
             }
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .frame(height: 110)
-            .chartOverlay { proxy in
-                GeometryReader { geo in
-                    Rectangle().fill(.clear).contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            guard let plotFrame = proxy.plotFrame else { return }
-                            var cell: HeatmapCell?
-                            if case .active(let location) = phase {
-                                let origin = geo[plotFrame].origin
-                                if let (week, row) = proxy.value(at: CGPoint(x: location.x - origin.x, y: location.y - origin.y), as: (Int, Int).self),
-                                   (0...6).contains(row) {
-                                    let index = week * 7 + (6 - row)
-                                    cell = cells.indices.contains(index) ? cells[index] : nil
-                                }
+            VStack(spacing: Self.gap) {
+                monthRow(weeks)
+                ForEach(0..<7, id: \.self) { row in
+                    HStack(spacing: Self.gap) {
+                        Color.clear.frame(width: Self.labelWidth)
+                            .overlay(alignment: .leading) {
+                                if let label = weekdayLabel(row) { Text(label).font(.caption2).foregroundStyle(.secondary).fixedSize() }
                             }
-                            // Dozens of pointer events land inside one cell; only a new cell re-renders.
-                            if cell != hovered { hovered = cell }
+                        ForEach(weeks.indices, id: \.self) { week in
+                            if week * 7 + row < cells.count {
+                                let cell = cells[week * 7 + row]
+                                HeatmapDot(level: level(cell.duration), isToday: cell.date == today, isHovered: hovered == cell,
+                                           hasAppeared: hasAppeared, animates: !reduceMotion, delay: Double(week) * 0.01)
+                                    .equatable()
+                                    .contentShape(Rectangle().inset(by: -Self.gap / 2))
+                                    .onHover { inside in
+                                        // Moving between cells fires leave-then-enter; a stale leave must not clear the new cell.
+                                        if inside { hovered = cell } else if hovered == cell { hovered = nil }
+                                    }
+                            } else {
+                                Color.clear.aspectRatio(1, contentMode: .fit)
+                            }
                         }
+                    }
+                    // A scaled-up hovered cell must draw over its neighbours, rows included.
+                    .zIndex(hovered?.weekday == row ? 1 : 0)
                 }
             }
-            Text(caption).font(.caption).foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Past year focus heatmap")
+            .accessibilityValue("\(formatDuration(total)) focused")
+            HStack {
+                Text(caption).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                legend
+            }
         }
+        .onAppear { hasAppeared = true }
+    }
+
+    /// Month names sit over the week column holding the 1st; the text is an
+    /// overlay, so it overflows right across the empty columns after it.
+    private func monthRow(_ weeks: [[HeatmapCell]]) -> some View {
+        HStack(spacing: Self.gap) {
+            Color.clear.frame(width: Self.labelWidth)
+            ForEach(weeks.indices, id: \.self) { week in
+                Color.clear.frame(maxWidth: .infinity)
+                    .overlay(alignment: .leading) {
+                        if let label = HeatmapCell.monthLabel(for: weeks[week]) {
+                            Text(label).font(.caption2).foregroundStyle(.secondary).fixedSize()
+                        }
+                    }
+            }
+        }
+        .frame(height: 12)
+    }
+
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Text("Less")
+            ForEach(Self.levels, id: \.self) { opacity in
+                RoundedRectangle(cornerRadius: 2).fill(Color.accentColor.opacity(opacity)).frame(width: 10, height: 10)
+            }
+            Text("More")
+        }
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .accessibilityHidden(true)
+    }
+
+    /// Rows run from the locale's first weekday; label Mon/Wed/Fri-style rows 1, 3, 5.
+    private func weekdayLabel(_ row: Int) -> String? {
+        guard row % 2 == 1 else { return nil }
+        let calendar = Calendar.current
+        return calendar.shortWeekdaySymbols[(calendar.firstWeekday - 1 + row) % 7]
     }
 
     private var caption: String {
-        guard let hovered else { return "Hover a day to see its total. Darker means more focused." }
+        guard let hovered else { return "Hover a day to see its total." }
         return "\(hovered.date.formatted(date: .abbreviated, time: .omitted)) · \(formatDuration(hovered.duration))"
     }
 
     private func level(_ duration: TimeInterval) -> Double {
-        guard goal > 0 else { return duration > 0 ? 0.6 : 0.08 }
+        guard goal > 0 else { return duration > 0 ? 0.6 : Self.levels[0] }
         switch duration {
-        case 0: return 0.08
-        case ..<(goal / 2): return 0.3
-        case ..<goal: return 0.55
-        case ..<(goal * 2): return 0.8
-        default: return 1.0
+        case 0: return Self.levels[0]
+        case ..<(goal / 2): return Self.levels[1]
+        case ..<goal: return Self.levels[2]
+        case ..<(goal * 2): return Self.levels[3]
+        default: return Self.levels[4]
         }
+    }
+}
+
+/// One day. Equatable so a hover change re-renders only the two cells involved.
+private struct HeatmapDot: View, Equatable {
+    let level: Double
+    let isToday: Bool
+    let isHovered: Bool
+    let hasAppeared: Bool
+    let animates: Bool
+    let delay: Double
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(Color.accentColor.opacity(level))
+            .overlay {
+                // Static ring: marks "now" without an endless pulse pulling focus.
+                if isToday { RoundedRectangle(cornerRadius: 4).strokeBorder(Color.accentColor, lineWidth: 1.5).padding(-2) }
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .scaleEffect(isHovered ? 1.5 : (hasAppeared ? 1 : 0.3))
+            .opacity(hasAppeared ? 1 : 0)
+            .animation(animates ? .spring(duration: 0.4, bounce: 0.3).delay(delay) : nil, value: hasAppeared)
+            .animation(animates ? .spring(duration: 0.25, bounce: 0.4) : nil, value: isHovered)
     }
 }
 
