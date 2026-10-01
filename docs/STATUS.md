@@ -124,6 +124,11 @@ If the answer isn't obviously yes, simplify.
   gradient period bar charts with a goal line and rising-bar entrance,
   and a by-task breakdown (up to 8 named tasks plus "Other") — all
   derived facts from recorded sessions, no points/badges/levels.
+- Right-click a task or subtask → Delete (with confirmation). Recorded
+  focus time is kept; Delete is disabled while the timer is on that task.
+- Statistics heatmap: month and weekday labels, a Less→More legend, an
+  entrance wave and hover pop (both off under Reduce Motion), today ring —
+  all in the accent color's existing opacity ramp.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
 - App identity: name, icon, accent color, cleaned `Info.plist`.
 - Notifications, launch-at-login, light/dark/system appearance.
