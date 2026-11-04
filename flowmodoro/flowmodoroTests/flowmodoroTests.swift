@@ -488,6 +488,57 @@ struct FlowmodoTests {
         #expect(StatisticsEngine.domainTotals(store.sessionValues, parentOf: store.parentOf).first?.taskID == domain.id)
     }
 
+    @Test @MainActor func pauseFocusFreezesElapsedAndLeavesBreaksAlone() throws {
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let task = try #require(store.createTask(title: "T"))
+        let t0 = Date(timeIntervalSince1970: 100_000)
+        store.timer.startFocus(taskID: task.id, mode: .flowmodoro, now: t0)
+        store.timer.pauseFocus(now: t0.addingTimeInterval(600))
+        #expect(store.timer.phase == .pausedFocus)
+        #expect(store.timer.focusDuration(at: t0.addingTimeInterval(10_000)) == 600)
+
+        store.timer.stop(now: t0.addingTimeInterval(600))
+        store.timer.startSuggestedBreak(now: t0.addingTimeInterval(601))
+        let before = store.timer.phase
+        store.timer.pauseFocus(now: t0.addingTimeInterval(700))
+        #expect(store.timer.phase == before)
+    }
+
+    @Test @MainActor func resetTodayHidesOnlyTodaysSessionsAndDiscardsRunningFocus() throws {
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let task = try #require(store.createTask(title: "T"))
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: .now)!
+        store.recordSession(id: UUID(), taskID: task.id, mode: .flowmodoro, startedAt: yesterday, endedAt: yesterday.addingTimeInterval(600), focusedDuration: 600, plannedDuration: nil, completed: true)
+        let startToday = Calendar.current.startOfDay(for: .now).addingTimeInterval(1)
+        store.recordSession(id: UUID(), taskID: task.id, mode: .flowmodoro, startedAt: startToday, endedAt: startToday.addingTimeInterval(900), focusedDuration: 900, plannedDuration: nil, completed: true)
+        store.timer.startFocus(taskID: task.id, mode: .flowmodoro)
+        #expect(store.todayTotal == 900)
+
+        store.resetToday()
+        #expect(store.todayTotal == 0)
+        #expect(store.sessionValues.count == 1)
+        #expect(store.sessionValues.first?.focusedDuration == 600)
+        #expect(store.timer.phase == .idle)
+    }
+
+    @Test @MainActor func deleteSessionHidesOnlyThatSession() throws {
+        let (defaults, cleanup) = scratchDefaults()
+        defer { cleanup() }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        let task = try #require(store.createTask(title: "T"))
+        let start = Calendar.current.startOfDay(for: .now).addingTimeInterval(1)
+        store.recordSession(id: UUID(), taskID: task.id, mode: .flowmodoro, startedAt: start, endedAt: start.addingTimeInterval(600), focusedDuration: 600, plannedDuration: nil, completed: true)
+        store.recordSession(id: UUID(), taskID: task.id, mode: .flowmodoro, startedAt: start.addingTimeInterval(1_000), endedAt: start.addingTimeInterval(1_900), focusedDuration: 900, plannedDuration: nil, completed: true)
+        let doomed = try #require(store.sessions.first { $0.focusedDuration == 600 })
+        store.deleteSession(doomed)
+        #expect(store.sessionValues.count == 1)
+        #expect(store.todayTotal == 900)
+    }
+
     @Test @MainActor func deleteIsBlockedWhileTimerOwnsTask() throws {
         let (defaults, cleanup) = scratchDefaults()
         defer { cleanup() }

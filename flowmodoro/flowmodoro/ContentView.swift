@@ -18,6 +18,7 @@ struct FlowmodoraPopover: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showingNewTask = false
     @State private var completedExpanded = false
+    @State private var confirmingResetToday = false
 
     /// openWindow(id:) alone shows the window but never brings it forward:
     /// Flowmodora is LSUIElement (no Dock icon), and an accessory app isn't
@@ -142,7 +143,39 @@ struct FlowmodoraPopover: View {
             .padding(.top, 14)
     }
 
+    private var canResetToday: Bool {
+        store.todayTotal > 0 || store.timer.phase == .focus || store.timer.phase == .pausedFocus
+    }
+
+    /// Inline, not .confirmationDialog: a dialog would close the popover
+    /// (same reason as TaskRow.deleteConfirmation).
+    private var resetTodayConfirmation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Reset today’s focus time?").font(.subheadline.weight(.medium))
+            HStack {
+                Text("Removes today’s sessions and any running timer.")
+                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                Spacer(minLength: 8)
+                Button("Cancel") { withExpandCollapse { confirmingResetToday = false } }
+                    .buttonStyle(.plain).font(.subheadline)
+                Button("Reset") { withExpandCollapse { store.resetToday(); confirmingResetToday = false } }
+                    .buttonStyle(.bordered).controlSize(.small).font(.callout)
+            }
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .transition(.expandCollapse)
+    }
+
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if confirmingResetToday { resetTodayConfirmation }
+            footerBar
+        }
+        .dropdownClip()
+    }
+
+    private var footerBar: some View {
         HStack {
             Button { open("statistics") } label: {
                 HStack(spacing: 4) {
@@ -155,6 +188,10 @@ struct FlowmodoraPopover: View {
                 .contentShape(Rectangle())
             }
             .springButtonStyle()
+            .contextMenu {
+                Button("Reset Today…") { withExpandCollapse { confirmingResetToday = true } }
+                    .disabled(!canResetToday)
+            }
             Spacer()
             Menu {
                 Button("History") { open("history") }
@@ -373,25 +410,73 @@ struct TaskRow: View {
 
 struct HistoryView: View {
     @Environment(AppStore.self) private var store
+    @State private var pendingDelete: FocusSessionRecord?
+
+    /// store.sessions is already newest first, and grouping keeps that order.
+    private var days: [(day: Date, sessions: [FocusSessionRecord])] {
+        let grouped = Dictionary(grouping: store.sessions) { Calendar.current.startOfDay(for: $0.startedAt) }
+        return grouped.keys.sorted(by: >).map { ($0, grouped[$0] ?? []) }
+    }
+
+    private func dayTitle(_ day: Date) -> String {
+        let full = day.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
+        if Calendar.current.isDateInToday(day) { return "Today, \(full)" }
+        if Calendar.current.isDateInYesterday(day) { return "Yesterday, \(full)" }
+        return full
+    }
+
+    private func timeRange(_ session: FocusSessionRecord) -> String {
+        let start = session.startedAt.formatted(date: .omitted, time: .shortened)
+        guard let end = session.endedAt else { return start }
+        return "\(start) – \(end.formatted(date: .omitted, time: .shortened))"
+    }
 
     var body: some View {
         List {
-            ForEach(store.sessions) { session in
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(store.taskTitle(for: session.taskID)).font(.body.weight(.medium))
-                        Text(session.startedAt.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+            ForEach(days, id: \.day) { group in
+                Section {
+                    ForEach(group.sessions) { session in row(session) }
+                } header: {
+                    HStack {
+                        Text(dayTitle(group.day))
+                        Spacer()
+                        Text(formatDuration(store.dailyTotals[group.day] ?? 0)).monospacedDigit()
                     }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(formatDuration(session.focusedDuration)).font(.body.monospacedDigit())
-                        Text(session.mode.title).font(.caption).foregroundStyle(.secondary)
-                    }
-                }.padding(.vertical, 4)
+                }
             }
         }
         .overlay { if store.sessions.isEmpty { ContentUnavailableView("No sessions yet", systemImage: "clock", description: Text("Completed focus sessions will appear here.")) } }
+        .confirmationDialog(
+            "Delete this session?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { session in
+            Button("Delete", role: .destructive) { store.deleteSession(session) }
+        } message: { session in
+            Text("\(formatDuration(session.focusedDuration)) of \(store.taskTitle(for: session.taskID)) on \(session.startedAt.formatted(date: .abbreviated, time: .shortened)). This can’t be undone.")
+        }
         .navigationTitle("History").frame(minWidth: 420, minHeight: 420)
+    }
+
+    private func row(_ session: FocusSessionRecord) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(store.taskTitle(for: session.taskID)).font(.body.weight(.medium))
+                Text(timeRange(session)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 3) {
+                Text(formatDuration(session.focusedDuration)).font(.body.monospacedDigit())
+                Text(session.mode.title).font(.caption).foregroundStyle(.secondary)
+            }
+            Button { pendingDelete = session } label: { Image(systemName: "trash") }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Delete session")
+                .accessibilityLabel("Delete session")
+        }
+        .padding(.vertical, 4)
+        .contextMenu { Button("Delete Session…") { pendingDelete = session } }
     }
 }
 

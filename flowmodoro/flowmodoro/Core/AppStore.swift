@@ -45,6 +45,8 @@ final class AppStore {
 
     private var contextMenu: StatusItemContextMenu?
     private var wakeObserver: NSObjectProtocol?
+    private var sleepObserver: NSObjectProtocol?
+    private var lockObserver: NSObjectProtocol?
     private var dayChangeObserver: NSObjectProtocol?
 
     /// `defaults` holds the running-timer snapshot and the backup folder.
@@ -98,6 +100,18 @@ final class AppStore {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.timer.refresh() }
+        }
+        // Focus must not keep counting while the lid is closed or the screen
+        // is locked: pause at the moment of sleep/lock; the user resumes.
+        sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.timer.pauseFocus() }
+        }
+        lockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.timer.pauseFocus() }
         }
         // "Today" and the streak are date-relative; without this they'd stay
         // stale past midnight until the next unrelated write triggered reload().
@@ -293,6 +307,29 @@ final class AppStore {
         if completed, settings.notificationsEnabled {
             notificationService.requestAuthorizationIfNeeded()
         }
+    }
+
+    /// Hides every session that started today and discards a running or
+    /// paused focus (its time is today's too). The one place sessions are
+    /// hidden: for time that never really happened, e.g. a Mac left asleep.
+    /// Soft delete via `deletedAt`, which reloadSessions() already filters.
+    func resetToday(now: Date = .now) {
+        if timer.phase == .focus || timer.phase == .pausedFocus { timer.reset() }
+        let start = Calendar.current.startOfDay(for: now)
+        for session in sessions where session.startedAt >= start {
+            session.deletedAt = now
+            session.updatedAt = now
+        }
+        save()
+        reloadSessions()
+    }
+
+    /// Same soft delete as resetToday, for one session (History's trash button).
+    func deleteSession(_ session: FocusSessionRecord) {
+        session.deletedAt = .now
+        session.updatedAt = .now
+        save()
+        reloadSessions()
     }
 
     func taskTitle(for id: UUID?) -> String {

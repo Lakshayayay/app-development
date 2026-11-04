@@ -114,6 +114,14 @@ final class TimerEngine {
         }
     }
 
+    /// Sleep and screen lock call this: focus time must only count while the
+    /// Mac is actually in use. Breaks are left alone (a break across sleep is
+    /// still a real break; completeBreak already handles a stale end).
+    func pauseFocus(now: Date = .now) {
+        guard snapshot.phase == .focus else { return }
+        pause(now: now)
+    }
+
     func resume(now: Date = .now) {
         switch snapshot.phase {
         case .pausedFocus:

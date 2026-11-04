@@ -273,6 +273,26 @@ Append a new entry here whenever a non-obvious technical call is made.
   vanished behind it. Anything modal shown from the popover has the same
   problem.
 
+### Focus pauses on sleep and screen lock
+- Decision: `AppStore` pauses a running *focus* timer on
+  `NSWorkspace.willSleepNotification` and the distributed
+  `com.apple.screenIsLocked` notification (`TimerEngine.pauseFocus`). Breaks
+  keep counting. On wake the user sees the timer paused and taps Resume/Stop.
+- Reason: focus time is `now - resumedAt`, so a closed lid used to log hours
+  of fake focus. Limit: a sudden power loss sends no notice.
+
+### Reset Today hides today's sessions
+- Decision: right-clicking the footer's "Today …" → "Reset Today…" (inline
+  confirmation) soft-deletes (`deletedAt`) every session that started today
+  and discards a running/paused focus. It is the one place sessions are
+  hidden on purpose: for time that never really happened (e.g. a Mac left
+  asleep). Hidden sessions drop out of the next backup (backups carry live
+  sessions only). Older days, and per-task Reset Time, are unaffected.
+  History groups sessions by day and its trash button / "Delete Session…"
+  context menu uses the same `deletedAt` soft delete for a single session
+  (`AppStore.deleteSession`), behind a `.confirmationDialog` (fine there:
+  History is its own window, not the popover).
+
 ### Reset Time hides sessions, never deletes them
 - Decision: right-clicking a task's row and choosing "Reset Time" sets
   `FocusTask.timeResetAt = .now`; `StatisticsEngine.taskTotals` then only
