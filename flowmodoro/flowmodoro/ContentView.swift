@@ -184,7 +184,8 @@ struct FlowmodoraPopover: View {
                         Text("· 🔥 \(store.streak.current)")
                     }
                 }
-                .font(.subheadline).foregroundStyle(.secondary)
+                .font(.system(size: 13.2)).foregroundStyle(.secondary)
+                .frame(minHeight: 26)
                 .contentShape(Rectangle())
             }
             .springButtonStyle()
@@ -200,7 +201,12 @@ struct FlowmodoraPopover: View {
                 Button("Settings") { open("settings") }
                 Divider()
                 Button("Quit Flowmodora") { NSApplication.shared.terminate(nil) }
-            } label: { Image(systemName: "ellipsis.circle") }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 15.6))
+                    .frame(minWidth: 26, minHeight: 26)
+                    .contentShape(Rectangle())
+            }
                 .menuStyle(.borderlessButton)
         }
     }
@@ -493,7 +499,11 @@ struct SettingsView: View {
                     ForEach(AppearancePreference.allCases) { Text($0.rawValue.capitalized).tag($0) }
                 }
                 Toggle("Notifications", isOn: Binding(get: { store.settings.notificationsEnabled }, set: { store.settings.notificationsEnabled = $0; store.updateSettings() }))
-                Toggle("Sounds", isOn: Binding(get: { store.settings.soundEnabled }, set: { store.settings.soundEnabled = $0; store.updateSettings() }))
+                Toggle("Sounds", isOn: Binding(get: { store.settings.soundEnabled }, set: {
+                    store.settings.soundEnabled = $0
+                    if !$0 { SoundService.stopAlarm() }
+                    store.updateSettings()
+                }))
             }
             Section("Focus") {
                 Picker("Default mode", selection: Binding(get: { store.settings.selectedMode }, set: store.setMode)) {

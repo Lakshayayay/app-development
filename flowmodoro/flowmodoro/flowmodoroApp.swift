@@ -87,43 +87,51 @@ struct MenuBarLabel: View {
         // constraint solving and never returns). A plain, structurally
         // stable HStack driven by TimerEngine's shared clock avoids it.
         HStack(spacing: 4) {
-            Image(systemName: symbol ?? "timer")
+            Image(systemName: content.symbol ?? "timer")
                 .imageScale(.small)
-                .opacity(symbol == nil ? 0 : 1)
-            Text(text(at: store.timer.now) ?? "")
+                .opacity(content.symbol == nil ? 0 : 1)
+            Text(content.text ?? "")
                 .monospacedDigit()
                 .foregroundStyle(isPaused ? .secondary : .primary)
         }
+    }
+
+    private var content: MenuBarLabelContent {
+        Self.content(
+            phase: store.timer.phase,
+            mode: store.timer.mode,
+            hidden: hideTimer,
+            remaining: store.timer.countdownRemaining(at: store.timer.now),
+            elapsed: store.timer.focusDuration(at: store.timer.now)
+        )
     }
 
     private var isPaused: Bool {
         store.timer.phase == .pausedFocus || store.timer.phase == .pausedBreak
     }
 
-    // Hidden while a timer is running replaces the icon+digits with a
-    // steaming-cup glyph — distinct from the break state's plain cup —
-    // instead of blanking the status item, which would look broken.
-    private var isHidden: Bool { hideTimer && store.timer.phase != .idle }
+    /// Hiding applies only to focus: a break should always be legible as a
+    /// break instead of looking like the timer was simply hidden.
+    static func content(phase: TimerPhase, mode: FocusMode, hidden: Bool, remaining: TimeInterval, elapsed: TimeInterval) -> MenuBarLabelContent {
+        let focusIsHidden = hidden && (phase == .focus || phase == .pausedFocus)
+        if focusIsHidden { return MenuBarLabelContent(symbol: "cup.and.heat.waves", text: nil) }
 
-    // Idle shows an icon only and focus shows digits only — one signal at a
-    // time instead of stacking a state icon on every state.
-    private var symbol: String? {
-        if isHidden { return "cup.and.heat.waves" }
-        switch store.timer.phase {
-        case .idle: return "timer"
-        case .breakTimer, .pausedBreak, .suggestedBreak: return "cup.and.saucer"
-        case .focus, .pausedFocus: return nil
+        switch phase {
+        case .idle:
+            return MenuBarLabelContent(symbol: "timer", text: nil)
+        case .focus where mode == .flowmodoro:
+            return MenuBarLabelContent(symbol: nil, text: formatDuration(elapsed, style: .timer))
+        case .focus, .pausedFocus:
+            return MenuBarLabelContent(symbol: nil, text: formatDuration(remaining, style: .timer))
+        case .breakTimer, .pausedBreak:
+            return MenuBarLabelContent(symbol: nil, text: hidden ? "BREAK" : "BREAK \(formatDuration(remaining, style: .timer))")
+        case .suggestedBreak:
+            return MenuBarLabelContent(symbol: nil, text: "BREAK READY")
         }
     }
+}
 
-    private func text(at date: Date) -> String? {
-        if isHidden { return nil }
-        switch store.timer.phase {
-        case .idle, .suggestedBreak: return nil
-        case .focus where store.timer.mode == .flowmodoro:
-            return formatDuration(store.timer.focusDuration(at: date), style: .timer)
-        case .focus, .pausedFocus, .breakTimer, .pausedBreak:
-            return formatDuration(store.timer.countdownRemaining(at: date), style: .timer)
-        }
-    }
+struct MenuBarLabelContent: Equatable {
+    let symbol: String?
+    let text: String?
 }

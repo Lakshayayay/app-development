@@ -14,6 +14,9 @@ final class TimerEngine {
     var store: AppStore?
     /// Injected (AppStore wires SoundService) so the engine stays AppKit-free and tests stay silent.
     var onBell: () -> Void = {}
+    /// Injected separately from the single Pomodoro break-start bell: a break
+    /// ending needs the repeated, acknowledgeable alarm instead.
+    var onBreakEnd: () -> Void = {}
     private(set) var snapshot: TimerSnapshot
     /// The clock driving every ticking display (menu-bar label, task row,
     /// timer ring) — updated once a second only while a timer is actually
@@ -276,7 +279,7 @@ final class TimerEngine {
         // Only reached once per break: phase already left .breakTimer above, so a
         // wake-time refresh right after a tick is a no-op. Stale ends (Mac was
         // asleep) stay silent, same rule as auto-continue.
-        if now.timeIntervalSince(end) <= Self.autoContinueGrace { ringBell() }
+        if now.timeIntervalSince(end) <= Self.autoContinueGrace { ringBreakEnd() }
         // Starts at `now`, never backdated to `end`. isAutoContinue tells
         // startFocus to leave roundsCompleted — already carried on
         // `snapshot` above — untouched instead of clearing it before persist.
@@ -307,6 +310,11 @@ final class TimerEngine {
     private func ringBell() {
         guard store?.settings.soundEnabled ?? true else { return }
         onBell()
+    }
+
+    private func ringBreakEnd() {
+        guard store?.settings.soundEnabled ?? true else { return }
+        onBreakEnd()
     }
 
     private func persist() {

@@ -13,7 +13,7 @@ final class StatusItemContextMenu: NSObject {
     init(store: AppStore) {
         self.store = store
         super.init()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             self?.handle(event) ?? event
         }
     }
@@ -24,6 +24,8 @@ final class StatusItemContextMenu: NSObject {
 
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard event.window?.level == .statusBar, let store else { return event }
+        SoundService.stopAlarm()
+        guard event.type == .rightMouseDown else { return event }
         NSMenu.popUpContextMenu(buildMenu(store: store), with: event, for: event.window?.contentView ?? NSView())
         return nil
     }

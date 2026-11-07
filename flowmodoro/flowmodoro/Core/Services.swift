@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Foundation
+import os
 import ServiceManagement
 @preconcurrency import UserNotifications
 
@@ -41,8 +42,46 @@ final class NotificationService {
 
 /// Plays directly rather than via UNNotificationSound so the break cue still
 /// lands under a Focus mode — which is exactly when a break ends.
+@MainActor
 enum SoundService {
+    private static let logger = Logger(subsystem: "lakshayorg.flowmodoro", category: "alarm")
+    private static var alarmTask: Task<Void, Never>?
+    private static let alarmSound = NSSound(named: "Glass")
+
     static func playBell() { NSSound(named: "Glass")?.play() }
+
+    static func startAlarm() {
+        if alarmTask != nil { stopAlarm(reason: "replaced") }
+        logger.debug("alarm start")
+        alarmTask = Task { @MainActor in
+            for ring in 0..<7 {
+                guard !Task.isCancelled else { return }
+                // NSSound(named:) is shared. Stop before every play so a
+                // still-ringing Glass sound never drops a repeat.
+                alarmSound?.stop()
+                alarmSound?.volume = 1.0
+                alarmSound?.play()
+                logger.debug("alarm ring \(ring + 1, privacy: .public)")
+                try? await Task.sleep(for: .seconds(ring == 6 ? 1 : 1.5))
+            }
+            guard !Task.isCancelled else { return }
+            alarmSound?.stop()
+            alarmTask = nil
+            logger.debug("alarm stop (timeout)")
+        }
+    }
+
+    static func stopAlarm() {
+        stopAlarm(reason: "acknowledged")
+    }
+
+    private static func stopAlarm(reason: String) {
+        guard alarmTask != nil else { return }
+        alarmTask?.cancel()
+        alarmTask = nil
+        alarmSound?.stop()
+        logger.debug("alarm stop (\(reason, privacy: .public))")
+    }
 }
 
 @MainActor

@@ -334,26 +334,55 @@ struct FlowmodoTests {
         #expect(engine.phase == .idle)
     }
 
-    @Test @MainActor func bellRingsOnBreakStartAndEndButNotForStaleEnd() {
+    @Test @MainActor func breakStartBellAndBreakEndAlarmRespectTimingAndSounds() throws {
         let (defaults, cleanup) = scratchDefaults()
         defer { cleanup() }
-        let engine = TimerEngine(defaults: defaults)
-        var rings = 0
-        engine.onBell = { rings += 1 }
+        let store = AppStore(modelContainer: try inMemoryContainer(), defaults: defaults)
+        var bellRings = 0
+        var breakEndAlarms = 0
+        store.timer.onBell = { bellRings += 1 }
+        store.timer.onBreakEnd = { breakEndAlarms += 1 }
         let start = Date(timeIntervalSince1970: 9_000)
         let plan = PomodoroPlan(work: 60, shortBreak: 60, autoStartBreak: true)
 
-        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start)
-        #expect(rings == 0)                                            // nothing at focus start
-        engine.refresh(at: start.addingTimeInterval(60))               // break starts
-        #expect(rings == 1)
-        engine.refresh(at: start.addingTimeInterval(120))              // break ends on time
-        #expect(rings == 2)
+        store.timer.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start)
+        #expect(bellRings == 0)                                         // nothing at focus start
+        store.timer.refresh(at: start.addingTimeInterval(60))           // break starts
+        #expect(bellRings == 1)
+        store.timer.refresh(at: start.addingTimeInterval(120))          // break ends on time
+        #expect(bellRings == 1)                                         // break end is now the alarm callback
+        #expect(breakEndAlarms == 1)
 
-        engine.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start.addingTimeInterval(200))
-        engine.refresh(at: start.addingTimeInterval(260))              // break starts
-        engine.refresh(at: start.addingTimeInterval(320 + 3 * 3_600)) // woke 3 h late: silent
-        #expect(rings == 3)
+        store.timer.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start.addingTimeInterval(200))
+        store.timer.refresh(at: start.addingTimeInterval(260))          // break starts
+        store.timer.refresh(at: start.addingTimeInterval(320 + 3 * 3_600)) // woke 3 h late: silent
+        #expect(bellRings == 2)
+        #expect(breakEndAlarms == 1)
+
+        store.settings.soundEnabled = false
+        store.updateSettings()
+        store.timer.startFocus(taskID: UUID(), mode: .pomodoro, plan: plan, now: start.addingTimeInterval(400))
+        store.timer.refresh(at: start.addingTimeInterval(460))
+        store.timer.refresh(at: start.addingTimeInterval(520))
+        #expect(bellRings == 2)
+        #expect(breakEndAlarms == 1)
+    }
+
+    @Test @MainActor func menuBarContentCoversEachPhaseAndHideState() {
+        let time: TimeInterval = 4 * 60 + 32
+        #expect(MenuBarLabel.content(phase: .idle, mode: .flowmodoro, hidden: false, remaining: time, elapsed: time) == MenuBarLabelContent(symbol: "timer", text: nil))
+        #expect(MenuBarLabel.content(phase: .idle, mode: .flowmodoro, hidden: true, remaining: time, elapsed: time) == MenuBarLabelContent(symbol: "timer", text: nil))
+        #expect(MenuBarLabel.content(phase: .focus, mode: .flowmodoro, hidden: false, remaining: time, elapsed: time) == MenuBarLabelContent(symbol: nil, text: "4:32"))
+        #expect(MenuBarLabel.content(phase: .focus, mode: .flowmodoro, hidden: true, remaining: time, elapsed: time) == MenuBarLabelContent(symbol: "cup.and.heat.waves", text: nil))
+        #expect(MenuBarLabel.content(phase: .focus, mode: .pomodoro, hidden: false, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "4:32"))
+        #expect(MenuBarLabel.content(phase: .pausedFocus, mode: .pomodoro, hidden: false, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "4:32"))
+        #expect(MenuBarLabel.content(phase: .pausedFocus, mode: .pomodoro, hidden: true, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: "cup.and.heat.waves", text: nil))
+        #expect(MenuBarLabel.content(phase: .breakTimer, mode: .pomodoro, hidden: false, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK 4:32"))
+        #expect(MenuBarLabel.content(phase: .breakTimer, mode: .pomodoro, hidden: true, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK"))
+        #expect(MenuBarLabel.content(phase: .pausedBreak, mode: .pomodoro, hidden: false, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK 4:32"))
+        #expect(MenuBarLabel.content(phase: .pausedBreak, mode: .pomodoro, hidden: true, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK"))
+        #expect(MenuBarLabel.content(phase: .suggestedBreak, mode: .pomodoro, hidden: false, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK READY"))
+        #expect(MenuBarLabel.content(phase: .suggestedBreak, mode: .pomodoro, hidden: true, remaining: time, elapsed: 0) == MenuBarLabelContent(symbol: nil, text: "BREAK READY"))
     }
 
     @Test @MainActor func freshManualStartClearsStaleRoundsCompleted() {

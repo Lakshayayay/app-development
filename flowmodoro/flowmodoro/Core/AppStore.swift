@@ -74,17 +74,26 @@ final class AppStore {
         timer = TimerEngine(defaults: defaults)
         timer.store = self
         timer.onBell = SoundService.playBell
+        timer.onBreakEnd = SoundService.startAlarm
         reload()
         contextMenu = StatusItemContextMenu(store: self)
         let hotkeysRegistered = hotkeyService.registerDefaultShortcuts(
             onStart: { [weak self] in
+                SoundService.stopAlarm()
                 guard let self else { return }
                 if self.timer.phase == .pausedFocus || self.timer.phase == .pausedBreak { self.timer.resume() }
                 else if self.timer.phase == .idle { self.timer.startFocus(taskID: self.settings.selectedTaskID, mode: self.settings.selectedMode) }
             },
-            onPause: { [weak self] in self?.timer.pause() },
-            onStop: { [weak self] in self?.timer.stop() },
+            onPause: { [weak self] in
+                SoundService.stopAlarm()
+                self?.timer.pause()
+            },
+            onStop: { [weak self] in
+                SoundService.stopAlarm()
+                self?.timer.stop()
+            },
             onToggleTimer: {
+                SoundService.stopAlarm()
                 // Same key the right-click menu's Hide/Show Timer writes.
                 let d = UserDefaults.standard
                 d.set(!d.bool(forKey: "hideMenuBarTimer"), forKey: "hideMenuBarTimer")
