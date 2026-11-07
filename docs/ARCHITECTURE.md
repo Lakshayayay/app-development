@@ -231,7 +231,9 @@ Append a new entry here whenever a non-obvious technical call is made.
 
 ### Notifications
 - Decision: `UNTimeIntervalNotificationTrigger` at actual target times; the
-  local timer stays authoritative regardless of delivery.
+  local timer stays authoritative regardless of delivery. Break completion
+  uses the injected `SoundService` alarm rather than a notification sound,
+  avoiding a duplicate ding.
 - Reason: notification delivery can be delayed or denied without affecting
   focus data.
 
@@ -353,16 +355,6 @@ Append a new entry here whenever a non-obvious technical call is made.
   happened. The product principle (see `STATUS.md`) is that focus data
   reflects what actually happened, not what the user intended.
 
-### Email OTP code instead of magic link (superseded: sign-in removed)
-- Decision: `signInWithOTP(email:)` + `verifyOTP(email:token:type:)` with a
-  typed 6-digit code, not a clickable magic link.
-- Reason: a magic link needs a custom URL scheme and cold-launch/already-
-  running reasoning — real surface area for a menu-bar utility. A typed
-  code needs only a text field.
-- Trade-off: the Supabase project's default email template sends a link,
-  not a bare code — the dashboard template needs `{{ .Token }}` added
-  manually (historical: the sign-in flow has since been removed).
-
 ### One shared clock instead of per-view polling
 - Decision: `TimerEngine` owns one `Task` (`updateTicking()`) ticking once a
   second only while `phase == .focus || .breakTimer`; every ticking display
@@ -380,10 +372,11 @@ Append a new entry here whenever a non-obvious technical call is made.
   own pending notification, and resuming scheduled a second one — both
   eventually fired.
 
-### Right-click menu via a local NSEvent monitor
-- Decision: `StatusItemContextMenu` installs
-  `NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown)` and pops a
-  plain `NSMenu` built fresh from current state at click time.
+### Status-item monitor via a local NSEvent monitor
+- Decision: `StatusItemContextMenu` monitors both mouse-down events: a left
+  click is passed through to open the popover, while a right click pops a
+  plain `NSMenu` built fresh from current state. Either click acknowledges a
+  currently ringing break alarm.
 - Reason: `MenuBarExtra` has no secondary-click API; this keeps the
   existing SwiftUI popover instead of a manually managed
   `NSStatusItem`/`NSPopover` that would also have to reproduce `openWindow`.
@@ -409,11 +402,6 @@ Append a new entry here whenever a non-obvious technical call is made.
   updating `recordSession` in memory keeps the Stop/complete-task click
   path off the full-history SwiftData fetch entirely.
 
-### Optional sync boundary (superseded: sync removed)
-- Decision: local persistence and the outbox are usable without Supabase;
-  remote sync is a separate transport concern.
-- Reason: focus must never block on authentication, connectivity, or RLS.
-
 ### Pomodoro plan frozen at Start; no auto-continue after a late break
 - Decision: pressing Start copies the Pomodoro settings into
   `TimerSnapshot.pomodoroPlan` (clamped to sane ranges). Auto-continued
@@ -429,23 +417,29 @@ Append a new entry here whenever a non-obvious technical call is made.
   like any other, so the snapshot resets and `roundsCompleted` restarts at 0,
   consistent with "manual Start = fresh run" above.
 
-### Coalesced outbox drains (superseded: sync removed)
-- Decision: `AppStore.requestSync()` cancels any in-flight debounce chain,
-  awaits the previous chain's completion, waits 400ms, then drains once —
-  so a burst of rapid saves (e.g. holding a settings stepper) coalesces into
-  one sync pass instead of each save spawning its own. `scheduleOutboxRetry`'s
-  backoff retry still calls `attemptSync()` directly and can in principle
-  overlap a coalesced drain, which is safe because `attemptSync` is
-  idempotent (upsert-by-id, delete-on-success).
-- Reason: every `save()` previously spawned its own independent
-  `attemptSync()` task.
+### Sandbox file access for backups
+- Decision: retain `com.apple.security.files.user-selected.read-write`.
+- Reason: the Settings backup-folder picker stores a security-scoped bookmark
+  and needs that entitlement across launches. The previous note claiming it
+  had been dropped was stale.
 
-### Network client entitlement, dropped file access, hardened runtime
-- Decision: the sandboxed app gained `com.apple.security.network.client`
-  (Supabase sync was previously silently sandbox-blocked with no way to
-  reach the network at all), dropped an unused
-  `com.apple.security.files.user-selected.read-write` (no file
-  picker/importer/exporter exists anywhere in the app), and enabled
-  Hardened Runtime.
-- Reason: least-privilege entitlements, and sync literally could not have
-  worked before this without the network entitlement.
+### Break-over alarm (repeat ≤10 s, stop on acknowledge)
+- Decision: a break end injects a repeated native Glass alarm through
+  `TimerEngine.onBreakEnd`; it rings at 0, 1.5, … 9 seconds and stops at 10
+  seconds, or earlier after a menu-bar click, global shortcut, Sounds-off,
+  or replacement alarm.
+- Reason: one break-end ding was easy to miss. Keeping the callback injected
+  leaves the timer AppKit-free and testable without playing sound.
+- Trade-off: volume is the app maximum but still follows the Mac's output
+  volume and mute; the app never changes system volume. App Nap could delay
+  the cadence, so it is monitored rather than pre-emptively held awake.
+
+### Menu-bar BREAK label; hiding applies to focus only
+- Decision: the always-structurally-stable status label shows `BREAK m:ss`,
+  `BREAK`, or `BREAK READY` for every break phase; hide-timer only replaces
+  a focus clock with the existing steaming-cup symbol.
+- Reason: the old coffee icon made a break visually indistinguishable from a
+  hidden focus timer.
+- Trade-off: both image and text children remain in the `HStack` (with the
+  unused image transparent) because conditional status-item view structure
+  previously caused an `NSStatusItem` Auto Layout CPU hang.

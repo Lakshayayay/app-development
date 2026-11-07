@@ -83,8 +83,9 @@ If the answer isn't obviously yes, simplify.
 ## Built and working
 
 - Menu-bar app (`MenuBarExtra`), no stray window at launch, subtle live
-  clock label (icon-only idle, `m:ss`/`h:mm:ss` while running, dimmed while
-  paused).
+  clock label (icon-only idle, `m:ss`/`h:mm:ss` while focusing, dimmed while
+  paused). Breaks explicitly read `BREAK m:ss` (or `BREAK` when the focus
+  clock is hidden), so a break cannot be mistaken for a hidden timer.
 - Right-click the menu-bar clock for a native context menu: pause/resume,
   stop or skip, complete the running task, quit.
 - Flowmodoro (count-up + ratio break) and Pomodoro (fixed intervals, an
@@ -100,6 +101,8 @@ If the answer isn't obviously yes, simplify.
   a single duration when today's and lifetime focused time are equal or
   both (with a tooltip) when they differ, and every pressable control
   (checkbox, row, new-task button, footer) gives spring-press feedback.
+- The footer's Today and overflow controls have 20% larger type/glyphs and
+  minimum hit targets without changing the popover's width or control order.
 - Right-click a task for a checklist of timeable subtasks (one level, see
   Product principles) — a subtask can be selected, timed, and completed
   exactly like a task, and its focused time rolls up into its domain's
@@ -131,7 +134,10 @@ If the answer isn't obviously yes, simplify.
   all in the accent color's existing opacity ramp.
 - Native Liquid Glass UI (`.glassEffect`, `.buttonStyle(.glass)`) throughout.
 - App identity: name, icon, accent color, cleaned `Info.plist`.
-- Notifications, launch-at-login, light/dark/system appearance.
+- Notifications, launch-at-login, light/dark/system appearance. A break end
+  repeats the native Glass chime for up to 10 seconds (or until the menu-bar
+  item/global shortcut acknowledges it); this respects Sounds and uses the
+  Mac's existing output volume and mute setting.
 - Automatic backups: after every change, a readable JSON copy of all
   tasks, sessions and settings goes to a folder chosen in Settings (iCloud
   Drive suggested), one file per day, last 14 kept; Back Up Now and Restore
@@ -170,10 +176,6 @@ need a human, not more code:
   pid,cpu,idlew -pid $PID` — no scriptable path exists yet: a status-item
   click is AppleScript/System-Events-reachable, but the popover it opens
   exposes no AX window to drive from a script.
-
-Known non-blocking cruft: `REGISTER_APP_GROUPS = YES` is dead build config
-on the app target — no app-group ID configured anywhere, no widget
-extension target exists yet.
 
 A follow-up round fixed the remaining "press it once or twice" feel
 (missing hit target on the 52pt timer buttons, duplicate press-feedback

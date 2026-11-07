@@ -1,7 +1,45 @@
 # Flowmodora
 
+<p align="center">
+  <img src="flowmodoro/flowmodoro/Assets.xcassets/AppIcon.appiconset/icon_512x512@2x.png" width="128" alt="Flowmodora app icon"/>
+</p>
+
+<p align="center"><strong>A quiet little timer for the menu bar.</strong><br/>Pick one thing. Start. Let the rest of the day make sense.</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-26%2B-000000?logo=apple&logoColor=white" alt="macOS 26 or later"/>
+  <img src="https://img.shields.io/badge/SwiftUI-native-FA7343?logo=swift&logoColor=white" alt="Native SwiftUI"/>
+  <img src="https://img.shields.io/badge/local--first-private-2D7D46" alt="Local first"/>
+  <img src="https://img.shields.io/badge/account-none-59636E" alt="No account"/>
+</p>
+
 A quiet little timer that lives in your Mac's menu bar, so you can focus on
 one thing at a time — and actually see where your hours go.
+
+## What’s new in 2.0
+
+### Breaks you can’t miss
+
+When a break ends, the native **Glass** chime repeats for up to 10 seconds.
+Click the menu-bar item, use a global shortcut, or turn Sounds off to stop it
+early. It plays at the app’s maximum volume, while still respecting your Mac’s
+output volume and mute setting.
+
+### `BREAK`, at a glance
+
+The menu bar now says `BREAK 4:32` during a running break, `BREAK` when the
+focus clock is hidden, and `BREAK READY` before a suggested break. A hidden
+focus timer still uses the steaming-cup hint; a break no longer looks like one.
+
+### Easier to hit
+
+The footer’s Today summary and overflow menu are 20% larger, with matching
+minimum hit targets. The popover’s width, order, and calm rhythm stay the same.
+
+> Fresh v2 screenshots are deliberately not included in this checkout: the
+> required Debug `-demoData` menu-bar surface was unavailable to capture in
+> this environment. The tour below remains genuine historical app imagery;
+> add only `-demoData` screenshots before publishing.
 
 ## What it is
 
@@ -32,7 +70,7 @@ even if you close the popover, sleep your laptop, or quit the app entirely
 It's also **local-first**: every task, session, and stat lives on your Mac.
 No account, no sign-up, no internet connection required.
 
-## A quick tour
+## A quick tour — v1.0
 
 From the first click to a year of history — every screen below is the real app.
 
@@ -41,7 +79,7 @@ appear right where you are. Pick a task, choose Flowmodoro or Pomodoro in the
 corner, and you're ready.
 
 <p align="center">
-  <img src="docs/journey/01-popover.png" width="340" alt="The popover: task list, idle timer ring and play button"/>
+  <img src="docs/journey/v1/01-popover.png" width="340" alt="The popover: task list, idle timer ring and play button"/>
 </p>
 
 **2. Right-click a task.** Add a subtask, reset just that row's time, or
@@ -49,28 +87,28 @@ delete it. Delete always asks first, and the hours you already focused stay
 in your history.
 
 <p align="center">
-  <img src="docs/journey/02-right-click.png" width="340" alt="Right-click menu on a task: Add Subtask, Reset Time, Delete Task"/>
+  <img src="docs/journey/v1/02-right-click.png" width="340" alt="Right-click menu on a task: Add Subtask, Reset Time, Delete Task"/>
 </p>
 
 **3. Break big tasks into a checklist.** Subtasks are timeable too — their
 time rolls up into the task above.
 
 <p align="center">
-  <img src="docs/journey/03-subtasks.png" width="340" alt="Thesis expanded to show two subtasks, one selected"/>
+  <img src="docs/journey/v1/03-subtasks.png" width="340" alt="Thesis expanded to show two subtasks, one selected"/>
 </p>
 
 **4. Press play.** Flowmodoro counts up while you work, and the same time
 ticks on the task row and in the menu bar.
 
 <p align="center">
-  <img src="docs/journey/04-focus.png" width="340" alt="A running focus session with pause and stop buttons"/>
+  <img src="docs/journey/v1/04-focus.png" width="340" alt="A running focus session with pause and stop buttons"/>
 </p>
 
 **5. Stop when you naturally stop.** Your break is worked out from how long
 you actually focused — start it, or skip it.
 
 <p align="center">
-  <img src="docs/journey/05-break.png" width="340" alt="Break ready: a suggested break with start and dismiss buttons"/>
+  <img src="docs/journey/v1/05-break.png" width="340" alt="Break ready: a suggested break with start and dismiss buttons"/>
 </p>
 
 **6. See where your hours went.** Today's ring, your streak, a year-long
@@ -78,14 +116,14 @@ heatmap (hover a day for its total), and charts by week, month, year or
 all time.
 
 <p align="center">
-  <img src="docs/journey/06-statistics.png" width="700" alt="The statistics window with the Past year heatmap and a weekly bar chart"/>
+  <img src="docs/journey/v1/06-statistics.png" width="700" alt="The statistics window with the Past year heatmap and a weekly bar chart"/>
 </p>
 
 **7. Make it yours — and back it up.** Tune the timers, pick a daily goal, and
 point Flowmodora at a folder (iCloud Drive works well) for automatic backups.
 
 <p align="center">
-  <img src="docs/journey/07-settings-backup.png" width="420" alt="Settings: focus options and the Backup section"/>
+  <img src="docs/journey/v1/07-settings-backup.png" width="420" alt="Settings: focus options and the Backup section"/>
 </p>
 
 ## Features
@@ -98,8 +136,10 @@ point Flowmodora at a folder (iCloud Drive works well) for automatic backups.
   it, reset just that row's time, or delete it.
 - **A live menu-bar clock** — the running timer is visible in your menu
   bar at all times, so you never have to open the app to check where you
-  stand. Right-click it for quick pause/resume/stop controls without
-  opening the popover at all.
+  stand. Focus remains a clock; breaks now say `BREAK m:ss`, `BREAK`, or
+  `BREAK READY`, so they cannot be mistaken for a hidden focus timer.
+  Right-click it for quick pause/resume/stop controls without opening the
+  popover at all.
 - **Survives everything** — quitting the app, sleeping your Mac, or just
   closing the popover doesn't lose your place. The timer is reconstructed
   from real timestamps, not a countdown that resets.
@@ -107,7 +147,9 @@ point Flowmodora at a folder (iCloud Drive works well) for automatic backups.
   time, plus a per-task breakdown, a focus streak and a year-long heatmap,
   computed entirely on your device.
 - **Gentle nudges** — optional notifications and sounds when an interval
-  ends, launch-at-login, and light/dark/system appearance, all in Settings.
+  ends; the Glass chime repeats for up to 10 seconds at break end until you
+  acknowledge it. Launch-at-login and light/dark/system appearance are all
+  in Settings.
 - **Your data, your machine** — everything above works fully offline,
   and nothing ever leaves your Mac unless you choose a backup folder.
 - **Automatic backups** — pick a folder once (iCloud Drive is suggested)
@@ -185,3 +227,24 @@ TimerEngine      SwiftData          system services
 Open `flowmodoro/flowmodoro.xcodeproj` in Xcode and run the `flowmodoro`
 scheme on macOS. No API keys or accounts are needed — it runs fully
 offline out of the box.
+
+For safe visual checks, build Debug and launch with `-demoData`; it uses an
+in-memory store and a separate defaults suite.
+
+## How it started
+
+The September 17 sketches are kept as history, not deleted:
+
+<p align="center">
+  <img src="docs/journey/v0-early/menu-bar.jpg" width="30%" alt="Early menu bar concept"/>
+  <img src="docs/journey/v0-early/popover-timer.jpg" width="30%" alt="Early timer popover"/>
+  <img src="docs/journey/v0-early/statistics.jpg" width="30%" alt="Early statistics concept"/>
+</p>
+
+## Changelog and roadmap
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes. Not built yet: a widget,
+a dedicated accessibility pass, Swift 6 strict concurrency migration, and real
+UI-test automation for the `MenuBarExtra`; [STATUS.md](docs/STATUS.md) has the
+current boundaries. This repository has no license file yet; choose one before
+distributing source or binaries.
